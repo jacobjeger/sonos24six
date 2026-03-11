@@ -92,18 +92,27 @@ app.get('/hls/:trackId/playlist.m3u8', async (req, res) => {
     }
     const manifest = await muxRes.text();
 
+    console.log(`[hls] === RAW MANIFEST FROM MUX (${manifest.length} bytes) ===`);
+    console.log(manifest);
+    console.log(`[hls] === END RAW MANIFEST ===`);
+
     // Derive base URL for rewriting relative segment paths
     const baseUrl = muxUrl.substring(0, muxUrl.lastIndexOf('/') + 1);
+    console.log(`[hls] Base URL for rewriting: ${baseUrl}`);
 
     // Rewrite relative URLs to absolute
     const rewritten = manifest.replace(/^(?!#)(\S+\.(?:m3u8|ts|m4s|mp4|aac)(\?[^\s]*)?)$/gm, (match) => {
       if (match.startsWith('http://') || match.startsWith('https://')) {
         return match; // already absolute
       }
-      return baseUrl + match;
+      const abs = baseUrl + match;
+      console.log(`[hls]   rewrite: ${match.substring(0, 80)} → ${abs.substring(0, 120)}`);
+      return abs;
     });
 
-    console.log(`[hls] Serving rewritten manifest (${rewritten.length} bytes)`);
+    console.log(`[hls] === REWRITTEN MANIFEST (${rewritten.length} bytes) ===`);
+    console.log(rewritten);
+    console.log(`[hls] === END REWRITTEN MANIFEST ===`);
     res.set('Content-Type', 'application/vnd.apple.mpegurl');
     res.set('Cache-Control', 'no-cache');
     res.send(rewritten);
