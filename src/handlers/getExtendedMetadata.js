@@ -1,20 +1,24 @@
 const { simpleResponse, mediaMetadata, mediaCollection } = require('../xml');
+const { getCachedTrack } = require('../client');
 
 async function getExtendedMetadata({ id }) {
   console.log(`[getExtendedMetadata] id=${id}`);
 
-  // Return minimal extended metadata wrapper
-  // Sonos calls this for items that have been added to My Sonos / favorites
   if (id && id.startsWith('track:')) {
     const trackId = id.split(':')[1];
-    const xml = mediaMetadata({
-      id,
-      title: `Track ${trackId}`,
-      artist: '',
-      album: '',
-      albumArtURI: '',
-      duration: 0,
-    });
+    const track = getCachedTrack(trackId);
+
+    const title = (track && track.title) || `Track ${trackId}`;
+    const artist = track
+      ? ((track.artists && track.artists[0] && track.artists[0].name) || track.subtitle || '')
+      : '';
+    const album = track
+      ? ((track.collection && track.collection.title) || track.album_title || '')
+      : '';
+    const albumArtURI = (track && track.img) || '';
+    const duration = (track && track.length) || 0;
+
+    const xml = mediaMetadata({ id, title, artist, album, albumArtURI, duration });
     return simpleResponse('getExtendedMetadata',
       `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
   }

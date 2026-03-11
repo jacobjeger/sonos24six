@@ -11,6 +11,18 @@ let deviceId = null;
 // Simple in-memory cache
 const cache = new Map();
 
+// Track metadata cache — populated when tracks are listed, used by getMediaMetadata
+const trackCache = new Map();
+
+function cacheTrack(track) {
+  if (!track || !track.id) return;
+  trackCache.set(String(track.id), track);
+}
+
+function getCachedTrack(id) {
+  return trackCache.get(String(id)) || null;
+}
+
 function getCached(key) {
   const entry = cache.get(key);
   if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
@@ -236,6 +248,16 @@ async function getFeatured() {
   return (data.props && data.props.data) || data || [];
 }
 
+// Artist page — returns artist info with their albums
+async function getArtistPage(artistId) {
+  const data = await apiRequest('GET', `${BASE}/app/music/artist/${artistId}`, undefined, true);
+  const props = data.props || data;
+  return {
+    artist: props.artist || props,
+    collections: props.collections || props.albums || [],
+  };
+}
+
 // Search using the real 24Six search API
 async function searchQuick(term) {
   const data = await apiRequest('POST', `${BASE}/app/music/search/quick`, { q: term }, false);
@@ -251,8 +273,11 @@ module.exports = {
   getPlaylistContents,
   getAlbumContents,
   getAlbumExtras,
+  getArtistPage,
   getStreamUrl,
   getFeatured,
   searchQuick,
   clearCache,
+  cacheTrack,
+  getCachedTrack,
 };

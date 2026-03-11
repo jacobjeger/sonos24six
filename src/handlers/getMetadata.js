@@ -6,7 +6,6 @@ const STATIC = {
   root: [
     { id: 'my-library', itemType: 'container', title: 'My Library' },
     { id: 'browse', itemType: 'container', title: 'Browse' },
-    { id: 'search', itemType: 'search', title: 'Search' },
   ],
   'my-library': [
     { id: 'playlists', itemType: 'container', title: 'Playlists' },
@@ -20,12 +19,16 @@ const STATIC = {
 };
 
 function trackToMetadata(track) {
+  // Cache every track we see so getMediaMetadata can look it up later
+  client.cacheTrack(track);
+
   const artist = (track.artists && track.artists[0] && track.artists[0].name) ||
                  track.subtitle || '';
-  const album = (track.collection && track.collection.title) || '';
+  const album = (track.collection && track.collection.title) ||
+                track.album_title || '';
   return mediaMetadata({
     id: `track:${track.id}`,
-    title: track.title,
+    title: track.title || '',
     artist,
     album,
     albumArtURI: track.img || '',
@@ -33,7 +36,14 @@ function trackToMetadata(track) {
   });
 }
 
+function paginate(items, index, count) {
+  const sliced = items.slice(index, index + count);
+  return { sliced, total: items.length };
+}
+
 async function getMetadata({ id, index, count }) {
+  console.log(`[getMetadata] id=${id} index=${index} count=${count}`);
+
   // Static containers
   if (STATIC[id]) {
     const items = STATIC[id].map(item => mediaCollection(item));
@@ -43,28 +53,25 @@ async function getMetadata({ id, index, count }) {
   // Search categories — Sonos calls getMetadata(id=search) to get searchable types
   if (id === 'search') {
     const categories = [
-      { id: 'search:playlists', itemType: 'search', title: 'Playlists' },
-      { id: 'search:albums', itemType: 'search', title: 'Albums' },
-      { id: 'search:artists', itemType: 'search', title: 'Artists' },
-      { id: 'search:tracks', itemType: 'search', title: 'Tracks' },
+      { id: 'search:all', itemType: 'search', title: 'All' },
     ];
     const items = categories.map(c => mediaCollection(c));
     return resultResponse('getMetadata', items, 0, items.length);
   }
 
-  // Dynamic containers
+  // Dynamic containers — Library
   if (id === 'playlists') {
     const playlists = await client.getPlaylists();
     const items = playlists.map(p => mediaCollection({
       id: `playlist:${p.id}`,
       itemType: 'playlist',
-      title: p.title,
+      title: p.title || p.name || '',
       albumArtURI: p.img || '',
       canPlay: true,
       canEnumerate: true,
     }));
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   if (id === 'albums') {
@@ -72,13 +79,14 @@ async function getMetadata({ id, index, count }) {
     const items = albums.map(a => mediaCollection({
       id: `album:${a.id}`,
       itemType: 'album',
-      title: a.title,
+      title: a.title || a.name || '',
+      artist: a.subtitle || '',
       albumArtURI: a.img || '',
       canPlay: true,
       canEnumerate: true,
     }));
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   if (id === 'artists') {
@@ -86,20 +94,20 @@ async function getMetadata({ id, index, count }) {
     const items = artists.map(a => mediaCollection({
       id: `artist:${a.id}`,
       itemType: 'artist',
-      title: a.name,
+      title: a.name || a.title || '',
       albumArtURI: a.img || '',
       canPlay: false,
       canEnumerate: true,
     }));
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   if (id === 'liked-songs') {
     const songs = await client.getLikedSongs();
     const items = songs.map(s => trackToMetadata(s));
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   if (id === 'new-releases') {
@@ -107,12 +115,12 @@ async function getMetadata({ id, index, count }) {
     const items = [];
     if (Array.isArray(featured)) {
       for (const section of featured) {
-        const collections = section.data || [];
+        const collections = section.data || section.collections || [];
         for (const c of collections) {
           items.push(mediaCollection({
             id: `album:${c.id}`,
             itemType: 'album',
-            title: c.title,
+            title: c.title || c.name || '',
             albumArtURI: c.img || '',
             canPlay: true,
             canEnumerate: true,
@@ -120,31 +128,53 @@ async function getMetadata({ id, index, count }) {
         }
       }
     }
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   // Playlist contents
   if (id.startsWith('playlist:')) {
     const playlistId = id.split(':')[1];
     const data = await client.getPlaylistContents(playlistId);
-    const tracks = data.contents || [];
+    // POST returns collection directly (no Inertia wrapper)
+    const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
     const items = tracks.map(t => trackToMetadata(t));
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   // Album contents
   if (id.startsWith('album:')) {
     const albumId = id.split(':')[1];
     const data = await client.getAlbumContents(albumId);
-    const tracks = data.contents || [];
+    // POST returns collection directly (no Inertia wrapper)
+    const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
     const items = tracks.map(t => trackToMetadata(t));
-    const sliced = items.slice(index, index + count);
-    return resultResponse('getMetadata', sliced, index, items.length);
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
+  }
+
+  // Artist — show their albums
+  if (id.startsWith('artist:')) {
+    const artistId = id.split(':')[1];
+    console.log(`[getMetadata] Fetching artist page for ${artistId}`);
+    const { collections } = await client.getArtistPage(artistId);
+    const albumList = Array.isArray(collections) ? collections :
+                      (collections && collections.data) || [];
+    const items = albumList.map(a => mediaCollection({
+      id: `album:${a.id}`,
+      itemType: 'album',
+      title: a.title || a.name || '',
+      albumArtURI: a.img || '',
+      canPlay: true,
+      canEnumerate: true,
+    }));
+    const { sliced, total } = paginate(items, index, count);
+    return resultResponse('getMetadata', sliced, index, total);
   }
 
   // Fallback: empty result
+  console.log(`[getMetadata] Unknown id: ${id}`);
   return resultResponse('getMetadata', [], 0, 0);
 }
 
