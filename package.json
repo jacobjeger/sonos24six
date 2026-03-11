@@ -4,7 +4,8 @@
   "description": "Sonos SMAPI bridge for 24Six music streaming",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "register": "node register.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0",
