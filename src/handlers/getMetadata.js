@@ -34,12 +34,8 @@ function extractAlbum(track) {
 }
 
 function trackToMetadata(track) {
-  // Cache every track we see so getMediaMetadata can look it up later
   client.cacheTrack(track);
-
-  // Playlist content items may have the real track ID in content_id
   const trackId = track.content_id || track.id;
-
   return mediaMetadata({
     id: `track:${trackId}`,
     title: track.title || track.name || '',
@@ -56,27 +52,22 @@ function paginate(items, index, count) {
 }
 
 async function getMetadata({ id, index, count }) {
-  console.log(`[getMetadata] id=${id} index=${index} count=${count}`);
+  console.log(`[getMetadata] id=${id}`);
 
-  // Null guard — if SOAP extraction failed, return empty
   if (!id) {
-    console.log(`[getMetadata] ERROR: id is null/undefined`);
+    console.error(`[getMetadata] id is null`);
     return resultResponse('getMetadata', [], 0, 0);
   }
 
   // Static containers
   if (STATIC[id]) {
     const items = STATIC[id].map(item => mediaCollection(item));
-    console.log(`[getMetadata] Static container "${id}": returning ${items.length} items`);
     return resultResponse('getMetadata', items, 0, items.length);
   }
 
-  // Search categories — Sonos calls getMetadata(id=search) to get searchable types
+  // Search categories
   if (id === 'search') {
-    const categories = [
-      { id: 'search:all', itemType: 'search', title: 'All' },
-    ];
-    const items = categories.map(c => mediaCollection(c));
+    const items = [mediaCollection({ id: 'search:all', itemType: 'search', title: 'All' })];
     return resultResponse('getMetadata', items, 0, items.length);
   }
 
@@ -84,7 +75,6 @@ async function getMetadata({ id, index, count }) {
   if (id === 'playlists') {
     try {
       const playlists = await client.getPlaylists();
-      console.log(`[getMetadata] Playlists: fetched ${playlists.length} playlists`);
       const items = playlists.map(p => {
         client.cachePlaylist(p);
         return mediaCollection({
@@ -99,7 +89,7 @@ async function getMetadata({ id, index, count }) {
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching playlists:`, err.message);
+      console.error(`[getMetadata] playlists error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -107,7 +97,6 @@ async function getMetadata({ id, index, count }) {
   if (id === 'albums') {
     try {
       const albums = await client.getAlbums();
-      console.log(`[getMetadata] Albums: fetched ${albums.length} albums`);
       const items = albums.map(a => {
         client.cacheAlbum(a);
         return mediaCollection({
@@ -123,7 +112,7 @@ async function getMetadata({ id, index, count }) {
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching albums:`, err.message);
+      console.error(`[getMetadata] albums error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -131,7 +120,6 @@ async function getMetadata({ id, index, count }) {
   if (id === 'artists') {
     try {
       const artists = await client.getArtists();
-      console.log(`[getMetadata] Artists: fetched ${artists.length} artists`);
       const items = artists.map(a => {
         client.cacheArtist(a);
         return mediaCollection({
@@ -146,7 +134,7 @@ async function getMetadata({ id, index, count }) {
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching artists:`, err.message);
+      console.error(`[getMetadata] artists error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -154,12 +142,11 @@ async function getMetadata({ id, index, count }) {
   if (id === 'liked-songs') {
     try {
       const songs = await client.getLikedSongs();
-      console.log(`[getMetadata] Liked songs: fetched ${songs.length} songs`);
       const items = songs.map(s => trackToMetadata(s));
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching liked songs:`, err.message);
+      console.error(`[getMetadata] liked-songs error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -168,9 +155,8 @@ async function getMetadata({ id, index, count }) {
     try {
       const featured = await client.getFeatured();
       const items = [];
-      const seen = new Set(); // dedupe by id
+      const seen = new Set();
 
-      // Helper to add a collection/album item
       function addAlbum(c) {
         if (!c || !c.id || seen.has(c.id)) return;
         seen.add(c.id);
@@ -185,29 +171,24 @@ async function getMetadata({ id, index, count }) {
         }));
       }
 
-      // Extract from all props — each can be: array, {headline, tiles}, {data: [...]}, or other
       for (const key of Object.keys(featured)) {
         if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
         const val = featured[key];
         if (!val) continue;
-
         if (Array.isArray(val)) {
-          console.log(`[getMetadata] new-releases: props.${key} is array(${val.length})`);
           for (const c of val) addAlbum(c);
         } else if (val && typeof val === 'object') {
           const tiles = val.tiles || val.data || val.items || [];
-          if (Array.isArray(tiles) && tiles.length > 0) {
-            console.log(`[getMetadata] new-releases: props.${key} has ${tiles.length} tiles (headline="${val.headline || ''}")`);
+          if (Array.isArray(tiles)) {
             for (const c of tiles) addAlbum(c);
           }
         }
       }
 
-      console.log(`[getMetadata] New releases: ${items.length} items from featured page`);
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching new releases:`, err.message);
+      console.error(`[getMetadata] new-releases error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -216,20 +197,17 @@ async function getMetadata({ id, index, count }) {
   if (id && id.startsWith('playlist:')) {
     try {
       const playlistId = id.split(':')[1];
-      console.log(`[getMetadata] Fetching playlist contents for ${playlistId}`);
       const data = await client.getPlaylistContents(playlistId);
       client.cachePlaylist(data);
       const tracks = data.contents || [];
       if (tracks.length > 0) {
-        console.log(`[getMetadata] Playlist track[0] keys: ${Object.keys(tracks[0]).join(', ')}`);
-        console.log(`[getMetadata] Playlist track[0] id=${tracks[0].id} content_id=${tracks[0].content_id}`);
+        console.log(`[getMetadata] playlist track[0] id=${tracks[0].id} content_id=${tracks[0].content_id}`);
       }
-      console.log(`[getMetadata] Playlist ${playlistId}: ${tracks.length} tracks`);
       const items = tracks.map(t => trackToMetadata(t));
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching playlist contents:`, err.message);
+      console.error(`[getMetadata] playlist error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -238,16 +216,14 @@ async function getMetadata({ id, index, count }) {
   if (id && id.startsWith('album:')) {
     try {
       const albumId = id.split(':')[1];
-      console.log(`[getMetadata] Fetching album contents for ${albumId}`);
       const data = await client.getAlbumContents(albumId);
       if (data && data.id) client.cacheAlbum(data);
       const tracks = data.contents || [];
-      console.log(`[getMetadata] Album ${albumId}: ${tracks.length} tracks, title="${data.title || data.name || 'unknown'}"`);
       const items = tracks.map(t => trackToMetadata(t));
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching album contents:`, err.message);
+      console.error(`[getMetadata] album error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
@@ -256,18 +232,15 @@ async function getMetadata({ id, index, count }) {
   if (id && id.startsWith('artist:')) {
     try {
       const artistId = id.split(':')[1];
-      console.log(`[getMetadata] Fetching artist page for ${artistId}`);
       const { artist, albums, topSongs, latest, featuredOn } = await client.getArtistPage(artistId);
       if (artist) client.cacheArtist(artist);
       const items = [];
       const seenAlbumIds = new Set();
 
-      // Add top songs first
       for (const s of topSongs) {
         items.push(trackToMetadata(s));
       }
 
-      // Helper to add album, deduped
       function addAlbum(a) {
         if (!a || !a.id || seenAlbumIds.has(String(a.id))) return;
         seenAlbumIds.add(String(a.id));
@@ -283,28 +256,18 @@ async function getMetadata({ id, index, count }) {
         }));
       }
 
-      // Add latest album first (if present)
-      if (latest && latest.id) {
-        console.log(`[getMetadata] Artist ${artistId}: adding latest album "${latest.title || latest.name}" (id=${latest.id})`);
-        addAlbum(latest);
-      }
-
-      // Then regular albums
+      if (latest && latest.id) addAlbum(latest);
       for (const a of albums) addAlbum(a);
-
-      // Then featured_on albums
       for (const a of featuredOn) addAlbum(a);
 
-      console.log(`[getMetadata] Artist ${artistId}: ${topSongs.length} songs + ${seenAlbumIds.size} albums = ${items.length} items`);
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);
     } catch (err) {
-      console.error(`[getMetadata] Error fetching artist page:`, err.message);
+      console.error(`[getMetadata] artist error:`, err.message);
       return resultResponse('getMetadata', [], 0, 0);
     }
   }
 
-  // Fallback: empty result
   console.log(`[getMetadata] Unknown id: ${id}`);
   return resultResponse('getMetadata', [], 0, 0);
 }

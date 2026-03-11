@@ -31,10 +31,9 @@ const STATIC_CONTAINERS = {
 };
 
 async function getExtendedMetadata({ id }) {
-  console.log(`[getExtendedMetadata] id=${id}`);
+  // Only log cache misses that trigger API fetches (at error level)
 
   if (!id) {
-    console.log(`[getExtendedMetadata] ERROR: id is null/undefined`);
     const xml = mediaCollection({ id: '', itemType: 'container', title: '', albumArtURI: '' });
     return simpleResponse('getExtendedMetadata',
       `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
@@ -60,22 +59,22 @@ async function getExtendedMetadata({ id }) {
 
     // If cached but incomplete, re-fetch
     if (track && (!extractArtist(track) || !(track.img || track.content_image_url))) {
-      console.log(`[getExtendedMetadata] Track ${trackId} cached but incomplete, re-fetching...`);
+      // re-fetch incomplete track
       try {
         const fresh = await getTrackInfo(trackId);
         if (fresh) track = fresh;
       } catch (err) {
-        console.log(`[getExtendedMetadata] Re-fetch failed: ${err.message}`);
+        console.error(`[getExtendedMetadata] Re-fetch failed: ${err.message}`);
       }
     }
 
     // Fallback: fetch from API if not cached
     if (!track) {
-      console.log(`[getExtendedMetadata] Track ${trackId} not in cache, fetching...`);
+      // not in cache, fetch from API
       try {
         track = await getTrackInfo(trackId);
       } catch (err) {
-        console.log(`[getExtendedMetadata] Failed to fetch track ${trackId}: ${err.message}`);
+        console.error(`[getExtendedMetadata] Failed to fetch track ${trackId}: ${err.message}`);
       }
     }
 
@@ -96,7 +95,7 @@ async function getExtendedMetadata({ id }) {
     let album = getCachedAlbum(albumId);
 
     if (!album) {
-      console.log(`[getExtendedMetadata] Album ${albumId} not in cache, fetching...`);
+      // not in cache, fetch from API
       try {
         const data = await getAlbumContents(albumId);
         if (data && data.id) {
@@ -104,7 +103,7 @@ async function getExtendedMetadata({ id }) {
           album = data;
         }
       } catch (err) {
-        console.log(`[getExtendedMetadata] Failed to fetch album ${albumId}: ${err.message}`);
+        console.error(`[getExtendedMetadata] Failed to fetch album ${albumId}: ${err.message}`);
       }
     }
 
@@ -127,7 +126,7 @@ async function getExtendedMetadata({ id }) {
     let playlist = getCachedPlaylist(playlistId);
 
     if (!playlist) {
-      console.log(`[getExtendedMetadata] Playlist ${playlistId} not in cache, fetching...`);
+      // not in cache, fetch from API
       try {
         const data = await getPlaylistContents(playlistId);
         if (data && data.id) {
@@ -135,7 +134,7 @@ async function getExtendedMetadata({ id }) {
           playlist = data;
         }
       } catch (err) {
-        console.log(`[getExtendedMetadata] Failed to fetch playlist ${playlistId}: ${err.message}`);
+        console.error(`[getExtendedMetadata] Failed to fetch playlist ${playlistId}: ${err.message}`);
       }
     }
 
@@ -157,7 +156,7 @@ async function getExtendedMetadata({ id }) {
     let artist = getCachedArtist(artistId);
 
     if (!artist) {
-      console.log(`[getExtendedMetadata] Artist ${artistId} not in cache, fetching...`);
+      // not in cache, fetch from API
       try {
         const data = await getArtistPage(artistId);
         if (data && data.artist) {
@@ -165,7 +164,7 @@ async function getExtendedMetadata({ id }) {
           cacheArtist(artist);
         }
       } catch (err) {
-        console.log(`[getExtendedMetadata] Failed to fetch artist ${artistId}: ${err.message}`);
+        console.error(`[getExtendedMetadata] Failed to fetch artist ${artistId}: ${err.message}`);
       }
     }
 
