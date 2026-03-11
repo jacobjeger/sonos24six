@@ -72,6 +72,9 @@ async function apiRequest(method, url, body, useCache) {
     data = {};
   }
 
+  console.log(`[client] ${method} ${url} → status ${res.status}, keys:`, Object.keys(data));
+  if (data.props) console.log(`[client]   props keys:`, Object.keys(data.props));
+
   if (cacheKey) setCache(cacheKey, data);
   return data;
 }
