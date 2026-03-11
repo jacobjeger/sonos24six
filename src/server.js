@@ -53,6 +53,9 @@ app.get('/strings.xml', (req, res) => {
   <stringtable xml:lang="en-US" section="AppLink">
     <string stringId="AppLinkMessage">Sign in to 24Six</string>
   </stringtable>
+  <stringtable xml:lang="en-US" section="Search">
+    <string stringId="search_all">All</string>
+  </stringtable>
 </stringtables>`);
 });
 
@@ -67,6 +70,9 @@ app.get('/presentationmap.xml', (req, res) => {
       <name>24Six</name>
     </Option>
   </BrowseOptions>
+  <SearchCategories>
+    <CustomCategory mappedId="search:all" stringId="search_all"/>
+  </SearchCategories>
 </Presentation>`);
 });
 

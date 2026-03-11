@@ -14,6 +14,9 @@ const cache = new Map();
 // Track metadata cache — populated when tracks are listed, used by getMediaMetadata
 const trackCache = new Map();
 
+// Album/collection metadata cache — populated during browsing/prewarm
+const albumCache = new Map();
+
 function cacheTrack(track) {
   if (!track || !track.id) return;
   trackCache.set(String(track.id), track);
@@ -21,6 +24,15 @@ function cacheTrack(track) {
 
 function getCachedTrack(id) {
   return trackCache.get(String(id)) || null;
+}
+
+function cacheAlbum(album) {
+  if (!album || !album.id) return;
+  albumCache.set(String(album.id), album);
+}
+
+function getCachedAlbum(id) {
+  return albumCache.get(String(id)) || null;
 }
 
 function getCached(key) {
@@ -299,10 +311,17 @@ async function prewarmCache() {
     // 2. Get playlists and cache their contents (up to 10)
     const playlists = await getPlaylists();
     const playlistSlice = playlists.slice(0, 10);
+    let loggedFirstPlaylistTrack = false;
     for (const p of playlistSlice) {
       try {
         const data = await getPlaylistContents(p.id);
         const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+        // Log raw first track from first playlist for field verification
+        if (!loggedFirstPlaylistTrack && tracks.length > 0) {
+          console.log(`[cache] RAW playlist track object keys:`, Object.keys(tracks[0]));
+          console.log(`[cache] RAW playlist track[0]:`, JSON.stringify(tracks[0]).substring(0, 500));
+          loggedFirstPlaylistTrack = true;
+        }
         for (const t of tracks) {
           cacheTrack(t);
           totalCached++;
@@ -315,16 +334,29 @@ async function prewarmCache() {
 
     // 3. Get albums and cache their contents (up to 20)
     const albums = await getAlbums();
+    // Log raw first album object for field verification
+    if (albums.length > 0) {
+      console.log(`[cache] RAW album object keys:`, Object.keys(albums[0]));
+      console.log(`[cache] RAW album[0]:`, JSON.stringify(albums[0]).substring(0, 500));
+    }
+    // Cache album metadata
+    for (const a of albums) {
+      cacheAlbum(a);
+    }
     const albumSlice = albums.slice(0, 20);
     for (const a of albumSlice) {
       try {
         const data = await getAlbumContents(a.id);
+        // The POST response IS the collection object — cache it as album too
+        if (data && data.id) {
+          cacheAlbum(data);
+        }
         const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
         for (const t of tracks) {
           cacheTrack(t);
           totalCached++;
         }
-        console.log(`[cache] Album "${a.title || a.id}": ${tracks.length} tracks`);
+        console.log(`[cache] Album "${a.title || a.name || a.id}": ${tracks.length} tracks`);
       } catch (err) {
         console.log(`[cache] Failed to fetch album ${a.id}: ${err.message}`);
       }
@@ -368,6 +400,8 @@ module.exports = {
   clearCache,
   cacheTrack,
   getCachedTrack,
+  cacheAlbum,
+  getCachedAlbum,
   getTrackInfo,
   prewarmCache,
 };

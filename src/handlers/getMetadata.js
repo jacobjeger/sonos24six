@@ -76,15 +76,18 @@ async function getMetadata({ id, index, count }) {
 
   if (id === 'albums') {
     const albums = await client.getAlbums();
-    const items = albums.map(a => mediaCollection({
-      id: `album:${a.id}`,
-      itemType: 'album',
-      title: a.title || a.name || '',
-      artist: a.subtitle || '',
-      albumArtURI: a.img || '',
-      canPlay: true,
-      canEnumerate: true,
-    }));
+    const items = albums.map(a => {
+      client.cacheAlbum(a);
+      return mediaCollection({
+        id: `album:${a.id}`,
+        itemType: 'album',
+        title: a.title || a.name || '',
+        artist: a.subtitle || '',
+        albumArtURI: a.img || '',
+        canPlay: true,
+        canEnumerate: true,
+      });
+    });
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
   }
@@ -147,6 +150,8 @@ async function getMetadata({ id, index, count }) {
   if (id.startsWith('album:')) {
     const albumId = id.split(':')[1];
     const data = await client.getAlbumContents(albumId);
+    // Cache the album metadata from the response
+    if (data && data.id) client.cacheAlbum(data);
     // POST returns collection directly (no Inertia wrapper)
     const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
     const items = tracks.map(t => trackToMetadata(t));
@@ -161,14 +166,17 @@ async function getMetadata({ id, index, count }) {
     const { collections } = await client.getArtistPage(artistId);
     const albumList = Array.isArray(collections) ? collections :
                       (collections && collections.data) || [];
-    const items = albumList.map(a => mediaCollection({
-      id: `album:${a.id}`,
-      itemType: 'album',
-      title: a.title || a.name || '',
-      albumArtURI: a.img || '',
-      canPlay: true,
-      canEnumerate: true,
-    }));
+    const items = albumList.map(a => {
+      client.cacheAlbum(a);
+      return mediaCollection({
+        id: `album:${a.id}`,
+        itemType: 'album',
+        title: a.title || a.name || '',
+        albumArtURI: a.img || '',
+        canPlay: true,
+        canEnumerate: true,
+      });
+    });
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
   }
