@@ -312,16 +312,34 @@ async function getStreamUrl(trackId) {
 
 async function getFeatured() {
   const data = await apiRequest('GET', `${BASE}/app/music/featured-homepage`, undefined, true);
-  return (data.props && data.props.data) || data || [];
+  const props = data.props || data;
+  console.log(`[client] Featured homepage props keys:`, Object.keys(props));
+  // Return the full props so the handler can pick what it needs
+  return props;
 }
 
-// Artist page — returns artist info with their albums
+// Artist page — returns artist info with top songs, albums, etc.
 async function getArtistPage(artistId) {
   const data = await apiRequest('GET', `${BASE}/app/music/artist/${artistId}`, undefined, true);
   const props = data.props || data;
+  console.log(`[client] Artist ${artistId} props keys:`, Object.keys(props));
+
+  // Extract albums — can be array or paginated object with .data
+  const rawAlbums = props.albums || props.collections || [];
+  const albums = Array.isArray(rawAlbums) ? rawAlbums : (rawAlbums.data || []);
+
+  // Extract top songs
+  const rawSongs = props.top_songs || [];
+  const topSongs = Array.isArray(rawSongs) ? rawSongs : (rawSongs.data || []);
+
+  console.log(`[client] Artist ${artistId}: ${albums.length} albums, ${topSongs.length} top songs`);
+
   return {
     artist: props.artist || props,
-    collections: props.collections || props.albums || [],
+    albums,
+    topSongs,
+    latest: props.latest || [],
+    featuredOn: props.featured_on || [],
   };
 }
 

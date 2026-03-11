@@ -127,21 +127,47 @@ async function getMetadata({ id, index, count }) {
   if (id === 'new-releases') {
     const featured = await client.getFeatured();
     const items = [];
-    if (Array.isArray(featured)) {
-      for (const section of featured) {
-        const collections = section.data || section.collections || [];
-        for (const c of collections) {
+    // Featured homepage returns various props: data (sections), or direct arrays
+    // Try to extract albums/collections from all possible locations
+    const sections = featured.data || [];
+    if (Array.isArray(sections)) {
+      for (const section of sections) {
+        const collections = section.data || section.collections || section.items || [];
+        if (Array.isArray(collections)) {
+          for (const c of collections) {
+            if (c.type === 'collection' || c.content_type === 'music' || c.id) {
+              items.push(mediaCollection({
+                id: `album:${c.id}`,
+                itemType: 'album',
+                title: c.title || c.name || '',
+                artist: c.subtitle || '',
+                albumArtURI: c.img || c.cover_url || '',
+                canPlay: true,
+                canEnumerate: true,
+              }));
+            }
+          }
+        }
+      }
+    }
+    // Also check for direct new_releases, trending, etc. at props level
+    for (const key of ['new_releases', 'trending', 'new_albums', 'new_singles', 'popular']) {
+      const arr = featured[key];
+      if (Array.isArray(arr)) {
+        for (const c of arr) {
           items.push(mediaCollection({
             id: `album:${c.id}`,
             itemType: 'album',
             title: c.title || c.name || '',
-            albumArtURI: c.img || '',
+            artist: c.subtitle || '',
+            albumArtURI: c.img || c.cover_url || '',
             canPlay: true,
             canEnumerate: true,
           }));
         }
       }
     }
+    console.log(`[getMetadata] New releases: ${items.length} items from featured page`);
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
   }
@@ -168,24 +194,33 @@ async function getMetadata({ id, index, count }) {
     return resultResponse('getMetadata', sliced, index, total);
   }
 
-  // Artist — show their albums
+  // Artist — show top songs then albums
   if (id.startsWith('artist:')) {
     const artistId = id.split(':')[1];
     console.log(`[getMetadata] Fetching artist page for ${artistId}`);
-    const { collections } = await client.getArtistPage(artistId);
-    const albumList = Array.isArray(collections) ? collections :
-                      (collections && collections.data) || [];
-    const items = albumList.map(a => {
+    const { albums, topSongs } = await client.getArtistPage(artistId);
+    const items = [];
+
+    // Add top songs first
+    for (const s of topSongs) {
+      items.push(trackToMetadata(s));
+    }
+
+    // Then albums
+    for (const a of albums) {
       client.cacheAlbum(a);
-      return mediaCollection({
+      items.push(mediaCollection({
         id: `album:${a.id}`,
         itemType: 'album',
         title: a.title || a.name || '',
-        albumArtURI: a.img || '',
+        artist: a.subtitle || '',
+        albumArtURI: a.img || a.cover_url || '',
         canPlay: true,
         canEnumerate: true,
-      });
-    });
+      }));
+    }
+
+    console.log(`[getMetadata] Artist ${artistId}: ${topSongs.length} songs + ${albums.length} albums = ${items.length} items`);
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
   }
