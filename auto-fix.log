@@ -1,0 +1,1 @@
+[2026-03-11T21:01:38Z] ACTION: Fix artist pages (extract top_songs+albums from props), browse/new-releases (return full featured props, extract from sections+direct keys), search handler rewrite (searchFull+searchQuick fallback) | FILES: src/client.js, src/handlers/getMetadata.js | RESULT: success
