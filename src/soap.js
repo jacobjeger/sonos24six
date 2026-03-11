@@ -27,8 +27,6 @@ async function dispatch(soapAction, body, reqHost) {
   const methodMatch = soapAction && soapAction.match(/#(\w+)/);
   const method = methodMatch ? methodMatch[1] : null;
 
-  console.log(`[soap] Method: ${method}`);
-
   // Handle getSessionId inline
   if (method === 'getSessionId') {
     const { simpleResponse } = require('./xml');
@@ -36,7 +34,7 @@ async function dispatch(soapAction, body, reqHost) {
       '      <getSessionIdResult>sonos-session-1</getSessionIdResult>');
   }
 
-  // Handle reportAccountAction inline (no-op, Sonos calls this when adding/removing account)
+  // Handle reportAccountAction inline (no-op)
   if (method === 'reportAccountAction') {
     const { simpleResponse } = require('./xml');
     return simpleResponse('reportAccountAction', '');
@@ -48,7 +46,6 @@ async function dispatch(soapAction, body, reqHost) {
     return soapFault('Client.UnsupportedMethod', `Method ${method} not supported`);
   }
 
-  // Extract common parameters from SOAP body
   const params = {
     id: extractTag(body, 'id'),
     index: parseInt(extractTag(body, 'index') || '0', 10),
@@ -56,14 +53,10 @@ async function dispatch(soapAction, body, reqHost) {
     term: extractTag(body, 'term'),
   };
 
-  console.log(`[soap] Params:`, JSON.stringify(params));
-
   try {
-    const result = await handler(params, reqHost);
-    console.log(`[soap] ${method} response: ${result ? result.length : 0} bytes`);
-    return result;
+    return await handler(params, reqHost);
   } catch (err) {
-    console.error(`[soap] Handler error for ${method}:`, err);
+    console.error(`[soap] ${method} error:`, err.message);
     return soapFault('Server.ServiceError', err.message || 'Internal error');
   }
 }

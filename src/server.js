@@ -30,19 +30,15 @@ app.get('/smapi', (req, res) => {
 // Parse raw XML body for SOAP requests
 app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
   const soapAction = req.headers['soapaction'] || req.headers['SOAPAction'] || '';
-  console.log(`[server] SOAP request: ${soapAction}`);
-  console.log(`[server] Request body: ${typeof req.body === 'string' ? req.body.substring(0, 500) : 'empty'}`);
+  const method = (soapAction.match(/#(\w+)/) || [])[1] || 'unknown';
+  console.log(`[soap] ${method}`);
 
-  const startTime = Date.now();
   try {
     const xml = await dispatch(soapAction, req.body, req.get('host'));
-    const elapsed = Date.now() - startTime;
-    console.log(`[server] SOAP response: ${xml ? xml.length : 0} bytes in ${elapsed}ms`);
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(xml);
   } catch (err) {
-    const elapsed = Date.now() - startTime;
-    console.error(`[server] Error after ${elapsed}ms:`, err);
+    console.error(`[soap] ${method} error:`, err.message);
     const { soapFault } = require('./xml');
     res.status(500).set('Content-Type', 'text/xml; charset=utf-8');
     res.send(soapFault('Server.ServiceError', err.message || 'Internal error'));

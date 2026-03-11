@@ -25,10 +25,8 @@ const playlistCache = new Map();
 
 function cacheTrack(track) {
   if (!track || !track.id) return;
-  // Normalize: pull artist/image from nested collection if missing on track
   if (track.collection) {
     if (!track.subtitle && !hasArtists(track)) {
-      // Try collection's subtitle or artists
       if (track.collection.subtitle) {
         track.subtitle = track.collection.subtitle;
       } else if (track.collection.artists && track.collection.artists.length > 0) {
@@ -42,10 +40,8 @@ function cacheTrack(track) {
       track.img = track.collection.cover_url || track.collection.img || '';
     }
   }
-  // Cache under the real content ID (playlist items may have content_id != id)
   const contentId = track.content_id || track.id;
   trackCache.set(String(contentId), track);
-  // Also cache under original id if different, for reverse lookups
   if (String(track.id) !== String(contentId)) {
     trackCache.set(String(track.id), track);
   }
@@ -136,7 +132,7 @@ async function apiRequest(method, url, body, useCache) {
 
   // Auto-relogin on 401/403
   if (res.status === 401 || res.status === 403) {
-    console.log(`[client] Got ${res.status}, re-logging in...`);
+    console.log(`[client] ${res.status} on ${url}, re-logging in`);
     clearCache();
     await login();
     opts.headers = defaultHeaders();
@@ -146,7 +142,7 @@ async function apiRequest(method, url, body, useCache) {
 
   // Inertia 409 = version mismatch, fall back to full HTML page
   if (res.status === 409) {
-    console.log(`[client] Inertia 409 — fetching full HTML page instead`);
+    console.log(`[client] Inertia 409, fetching HTML for ${url}`);
     res = await fetch(url, {
       method: 'GET',
       headers: {
@@ -157,39 +153,29 @@ async function apiRequest(method, url, body, useCache) {
     });
   }
 
-  console.log(`[client] ${method} ${url} → status ${res.status}`);
   const text = await res.text();
   let data;
   try {
     data = JSON.parse(text);
   } catch {
-    // Response is HTML — extract Inertia data from data-page attribute
     const $ = cheerio.load(text);
     const dataPage = $('[data-page]').attr('data-page');
     if (dataPage) {
       try {
         data = JSON.parse(dataPage);
-        console.log(`[client]   extracted Inertia data from HTML, keys:`, Object.keys(data));
       } catch {
-        console.log(`[client] Could not parse data-page JSON`);
+        console.error(`[client] Failed to parse data-page JSON from ${url}`);
         data = {};
       }
     } else {
-      console.log(`[client] Non-JSON, no data-page (${text.length} chars):`, text.substring(0, 300));
+      console.error(`[client] Non-JSON, no data-page from ${url} (${res.status})`);
       data = {};
     }
   }
 
-  if (Object.keys(data).length > 0) {
-    console.log(`[client]   response keys:`, Object.keys(data));
-    if (data.props) {
-      console.log(`[client]   props keys:`, Object.keys(data.props));
-      // Capture device_id from API responses (needed for streaming)
-      if (data.props.device_id) {
-        deviceId = data.props.device_id;
-        console.log(`[client]   captured device_id: ${deviceId}`);
-      }
-    }
+  // Capture device_id from API responses (needed for streaming)
+  if (data.props && data.props.device_id) {
+    deviceId = data.props.device_id;
   }
 
   if (cacheKey) setCache(cacheKey, data);
@@ -199,80 +185,53 @@ async function apiRequest(method, url, body, useCache) {
 // Helper: extract array from API response (handles .data, .tiles, direct array)
 function extractList(data, label) {
   const props = data.props || data;
-  if (!props) {
-    console.log(`[client] extractList(${label}): no props in response`);
-    return [];
-  }
-  // props.data is the most common pattern for library endpoints
+  if (!props) return [];
   const raw = props.data;
   if (Array.isArray(raw)) return raw;
   if (raw && typeof raw === 'object') {
-    // {headline, tiles} or paginated {data: [...]}
-    if (raw.tiles) {
-      console.log(`[client] extractList(${label}): using .tiles (${raw.tiles.length} items)`);
-      return raw.tiles;
-    }
-    if (raw.data) {
-      console.log(`[client] extractList(${label}): using .data.data (${raw.data.length} items)`);
-      return raw.data;
-    }
+    if (raw.tiles) return raw.tiles;
+    if (raw.data) return raw.data;
   }
-  // Fallback: check top-level array keys
   for (const key of Object.keys(props)) {
     if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
     const val = props[key];
     if (Array.isArray(val) && val.length > 0 && val[0] && val[0].id) {
-      console.log(`[client] extractList(${label}): using props.${key} (${val.length} items)`);
       return val;
     }
   }
-  console.log(`[client] extractList(${label}): no data found, props keys:`, Object.keys(props));
+  console.log(`[client] extractList(${label}): no data found`);
   return [];
 }
 
 // Library endpoints
 async function getPlaylists() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/playlist`, undefined, true);
-  const result = extractList(data, 'playlists');
-  console.log(`[client] getPlaylists: ${result.length} items`);
-  return result;
+  return extractList(data, 'playlists');
 }
 
 async function getAlbums() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/collection`, undefined, true);
-  const result = extractList(data, 'albums');
-  console.log(`[client] getAlbums: ${result.length} items`);
-  return result;
+  return extractList(data, 'albums');
 }
 
 async function getArtists() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/artist`, undefined, true);
-  const result = extractList(data, 'artists');
-  console.log(`[client] getArtists: ${result.length} items`);
-  return result;
+  return extractList(data, 'artists');
 }
 
 async function getLikedSongs() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/content`, undefined, true);
-  const result = extractList(data, 'liked-songs');
-  console.log(`[client] getLikedSongs: ${result.length} items`);
-  return result;
+  return extractList(data, 'liked-songs');
 }
 
 // Content endpoints
 async function getPlaylistContents(id) {
-  // GET returns playlist with contents[]; POST adds a song to playlist per API ref
   const data = await apiRequest('GET', `${BASE}/app/music/playlist/${id}`, undefined, false);
-  // Inertia page wraps in props.playlist or props.collection
   const props = data.props || {};
-  const playlist = props.playlist || props.collection || data;
-  console.log(`[client] getPlaylistContents(${id}): keys=${Object.keys(playlist)}, contents=${(playlist.contents || []).length} tracks`);
-  return playlist;
+  return props.playlist || props.collection || data;
 }
 
 async function getAlbumContents(id) {
-  // GET with Inertia headers returns props.collection with contents[]
-  // POST only returns collection metadata without contents
   const data = await apiRequest('GET', `${BASE}/app/music/collection/${id}`, undefined, false);
   const props = data.props || data || {};
   const collection = props.collection || props || {};
@@ -281,10 +240,7 @@ async function getAlbumContents(id) {
   const albumImg = (collection && (collection.cover_url || collection.img)) || '';
   const albumName = (collection && (collection.name || collection.title)) || '';
 
-  console.log(`[client] Album ${id} contents keys:`, Object.keys(collection));
   if (collection.contents) {
-    console.log(`[client] Album ${id}: ${collection.contents.length} tracks`);
-    // Enrich each track with album info if missing
     for (const t of collection.contents) {
       if (!t.subtitle && albumArtist) {
         t.subtitle = albumArtist.name || albumArtist.title || '';
@@ -299,8 +255,6 @@ async function getAlbumContents(id) {
         t.collection = { id: collection.id, name: albumName, title: albumName, artists: albumArtists };
       }
     }
-  } else {
-    console.log(`[client] Album ${id}: no contents field found`);
   }
   return collection;
 }
@@ -313,13 +267,11 @@ async function getAlbumExtras(albumId) {
 async function getStreamUrl(trackId) {
   const url = `${BASE}/app/content/${trackId}/begin`;
 
-  // Ensure we have a device_id (fetch a library page if needed)
   if (!deviceId) {
-    console.log(`[getStreamUrl] No device_id cached, fetching from library...`);
     await getPlaylists();
   }
   if (!deviceId) {
-    console.log(`[getStreamUrl] Still no device_id after library fetch!`);
+    console.error(`[client] No device_id available for streaming`);
     return null;
   }
 
@@ -332,113 +284,65 @@ async function getStreamUrl(trackId) {
       'Content-Type': 'application/json',
     };
     const body = JSON.stringify({ device_id: deviceId, interaction: true });
-    console.log(`[getStreamUrl] POST ${url} with device_id=${deviceId}`);
 
     const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
-    console.log(`[getStreamUrl] Response status: ${res.status}`);
 
-    // If redirect, check Location header for stream URL
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
-      console.log(`[getStreamUrl] Redirect Location: ${location}`);
       if (location && !location.includes('24six.app/app/') && !location.includes('24six.app/login')) {
         return location;
       }
       return null;
     }
 
-    // Parse JSON response
     const text = await res.text();
     try {
       const data = JSON.parse(text);
-      console.log(`[getStreamUrl] Response keys:`, Object.keys(data));
-      if (data.message) console.log(`[getStreamUrl] Message:`, data.message);
-      if (data.errors) console.log(`[getStreamUrl] Errors:`, JSON.stringify(data.errors));
       if (data.url) return data.url;
       if (data.stream_url) return data.stream_url;
       if (data.src) return data.src;
+      if (data.errors) console.error(`[client] Stream error for ${trackId}:`, JSON.stringify(data.errors));
     } catch {
-      console.log(`[getStreamUrl] Non-JSON response (${text.length} chars):`, text.substring(0, 200));
+      // non-JSON response
     }
 
     return null;
   }
 
-  // Try with current session
   let result = await doStreamRequest();
   if (result) return result;
 
   // Re-login and retry once
-  console.log(`[getStreamUrl] First attempt failed, re-logging in...`);
+  console.log(`[client] Stream failed for ${trackId}, re-logging in`);
   clearCache();
   await login();
-  // Re-fetch device_id after login
   deviceId = null;
   await getPlaylists();
 
   result = await doStreamRequest();
-  if (result) return result;
-
-  console.log(`[getStreamUrl] All attempts failed for track ${trackId}`);
-  return null;
+  if (!result) console.error(`[client] All stream attempts failed for ${trackId}`);
+  return result;
 }
 
 async function getFeatured() {
   const data = await apiRequest('GET', `${BASE}/app/music/featured-homepage`, undefined, true);
-  const props = data.props || data;
-  console.log(`[client] Featured homepage props keys:`, Object.keys(props));
-  // Debug: dump shapes of all props
-  for (const key of Object.keys(props)) {
-    if (['errors', 'device_id', 'meta'].includes(key)) continue;
-    const val = props[key];
-    if (Array.isArray(val)) {
-      console.log(`[client] Featured props.${key}: array(${val.length})${val.length > 0 ? ' first=' + JSON.stringify(Object.keys(val[0] || {})) : ''}`);
-    } else if (val && typeof val === 'object') {
-      console.log(`[client] Featured props.${key}: object keys=${JSON.stringify(Object.keys(val))}`);
-    } else {
-      console.log(`[client] Featured props.${key}: ${typeof val}`);
-    }
-  }
-  // Return the full props so the handler can pick what it needs
-  return props;
+  return data.props || data;
 }
 
-// Artist page — returns artist info with top songs, albums, etc.
 async function getArtistPage(artistId) {
   const data = await apiRequest('GET', `${BASE}/app/music/artist/${artistId}`, undefined, true);
   const props = data.props || data;
-  console.log(`[client] Artist ${artistId} props keys:`, Object.keys(props));
 
-  // Debug: dump raw shapes of key fields
-  for (const key of ['albums', 'collections', 'top_songs', 'latest', 'featured_on', 'artist']) {
-    const val = props[key];
-    if (val === undefined) continue;
-    if (Array.isArray(val)) {
-      console.log(`[client] Artist ${artistId} props.${key}: array(${val.length})`);
-    } else if (val && typeof val === 'object') {
-      console.log(`[client] Artist ${artistId} props.${key}: object keys=${JSON.stringify(Object.keys(val))}`);
-      if (val.data) console.log(`[client] Artist ${artistId} props.${key}.data: array(${Array.isArray(val.data) ? val.data.length : typeof val.data})`);
-    } else {
-      console.log(`[client] Artist ${artistId} props.${key}: ${typeof val} = ${JSON.stringify(val)}`);
-    }
-  }
-
-  // Extract albums — can be array or {headline, tiles} object
   const rawAlbums = props.albums || props.collections || [];
   const albums = Array.isArray(rawAlbums) ? rawAlbums : (rawAlbums.tiles || rawAlbums.data || []);
 
-  // Extract top songs — can be array or {headline, tiles} object
   const rawSongs = props.top_songs || [];
   const topSongs = Array.isArray(rawSongs) ? rawSongs : (rawSongs.tiles || rawSongs.data || []);
 
-  // Extract featured_on — can be array or {headline, tiles} object
   const rawFeatured = props.featured_on || [];
   const featuredOn = Array.isArray(rawFeatured) ? rawFeatured : (rawFeatured.tiles || rawFeatured.data || []);
 
-  // Extract latest album (single object, not array)
   const latest = props.latest || null;
-
-  console.log(`[client] Artist ${artistId}: ${albums.length} albums, ${topSongs.length} top songs, ${featuredOn.length} featured_on, latest=${latest ? latest.id || 'yes' : 'none'}`);
 
   return {
     artist: props.artist || props,
@@ -449,25 +353,18 @@ async function getArtistPage(artistId) {
   };
 }
 
-// Quick search (typeahead) — POST returns flat array of mixed results
 async function searchQuick(term) {
   const data = await apiRequest('POST', `${BASE}/app/music/search/quick`, { q: term }, false);
   return Array.isArray(data) ? data : [];
 }
 
-// Full search — GET returns categorized results (songs, albums, artists, playlists)
 async function searchFull(term) {
   const data = await apiRequest('GET', `${BASE}/app/music/search?q=${encodeURIComponent(term)}`, undefined, false);
-  const props = data.props || data;
-  console.log(`[client] Full search response keys:`, Object.keys(props));
-  return props;
+  return data.props || data;
 }
 
-// Fetch individual track metadata — POST returns track directly (no Inertia wrapper)
 async function getTrackInfo(trackId) {
-  console.log(`[client] Fetching track info for ${trackId}`);
-
-  // POST /app/music/content/{id} — returns raw track object (no Inertia headers needed)
+  // POST /app/music/content/{id} — returns raw track object
   try {
     const res = await fetch(`${BASE}/app/music/content/${trackId}`, {
       method: 'POST',
@@ -479,124 +376,62 @@ async function getTrackInfo(trackId) {
       },
       redirect: 'manual',
     });
-    console.log(`[client] POST track ${trackId} → status ${res.status}`);
     if (res.ok) {
       const postData = await res.json();
-      console.log(`[client] POST track ${trackId} response keys:`, Object.keys(postData));
       if (postData && postData.id && postData.title) {
-        console.log(`[client] Track info (POST): title="${postData.title}" artists=${JSON.stringify(postData.artists?.map(a => a.name))} collection=${postData.collection?.name || 'none'}`);
         cacheTrack(postData);
         return postData;
       }
     }
   } catch (err) {
-    console.log(`[client] POST track ${trackId} failed: ${err.message}`);
+    console.error(`[client] POST track ${trackId} failed: ${err.message}`);
   }
 
-  // Fallback: GET with Inertia returns page with content in props
-  console.log(`[client] Trying GET for track ${trackId}...`);
+  // Fallback: GET with Inertia
   const data = await apiRequest('GET', `${BASE}/app/music/content/${trackId}`, undefined, false);
   const props = data.props || data;
-  console.log(`[client] GET track ${trackId} response keys:`, Object.keys(props));
   const track = props.content || props.track || props;
   if (track && track.id) {
-    console.log(`[client] Track info (GET): title="${track.title}" subtitle="${track.subtitle}" img="${track.img}" artists=${JSON.stringify(track.artists?.map(a => a.name))}`);
     cacheTrack(track);
     return track;
   }
-  console.log(`[client] Could not extract track from response`);
   return null;
 }
 
-// Pre-warm the track cache on startup
 async function prewarmCache() {
-  console.log(`[cache] Pre-warming track cache...`);
+  console.log(`[cache] Pre-warming...`);
   let totalCached = 0;
 
   try {
-    // 1. Cache liked songs
     const likedSongs = await getLikedSongs();
-    for (const s of likedSongs) {
-      cacheTrack(s);
-      totalCached++;
-    }
-    console.log(`[cache] Cached ${likedSongs.length} liked songs`);
+    for (const s of likedSongs) { cacheTrack(s); totalCached++; }
 
-    // 2. Get playlists and cache their contents (up to 10)
     const playlists = await getPlaylists();
-    const playlistSlice = playlists.slice(0, 10);
-    let loggedFirstPlaylistTrack = false;
-    for (const p of playlistSlice) {
+    for (const p of playlists.slice(0, 10)) {
       try {
         const data = await getPlaylistContents(p.id);
-        const tracks = data.contents || [];
-        // Log raw first track from first playlist for field verification
-        if (!loggedFirstPlaylistTrack && tracks.length > 0) {
-          console.log(`[cache] RAW playlist track object keys:`, Object.keys(tracks[0]));
-          console.log(`[cache] RAW playlist track[0]:`, JSON.stringify(tracks[0]).substring(0, 500));
-          loggedFirstPlaylistTrack = true;
-        }
-        for (const t of tracks) {
-          cacheTrack(t);
-          totalCached++;
-        }
-        console.log(`[cache] Playlist "${p.title || p.id}": ${tracks.length} tracks`);
+        for (const t of (data.contents || [])) { cacheTrack(t); totalCached++; }
       } catch (err) {
-        console.log(`[cache] Failed to fetch playlist ${p.id}: ${err.message}`);
+        console.error(`[cache] Playlist ${p.id} failed: ${err.message}`);
       }
     }
 
-    // 3. Get albums and cache their contents (up to 20)
     const albums = await getAlbums();
-    // Log raw first album object for field verification
-    if (albums.length > 0) {
-      console.log(`[cache] RAW album object keys:`, Object.keys(albums[0]));
-      console.log(`[cache] RAW album[0]:`, JSON.stringify(albums[0]).substring(0, 500));
-    }
-    // Cache album metadata
-    for (const a of albums) {
-      cacheAlbum(a);
-    }
-    const albumSlice = albums.slice(0, 20);
-    for (const a of albumSlice) {
+    for (const a of albums) { cacheAlbum(a); }
+    for (const a of albums.slice(0, 20)) {
       try {
         const data = await getAlbumContents(a.id);
-        // getAlbumContents now returns the collection object with contents[]
-        if (data && data.id) {
-          cacheAlbum(data);
-        }
-        const tracks = data.contents || [];
-        for (const t of tracks) {
-          cacheTrack(t);
-          totalCached++;
-        }
-        console.log(`[cache] Album "${a.title || a.name || a.id}": ${tracks.length} tracks`);
+        if (data && data.id) cacheAlbum(data);
+        for (const t of (data.contents || [])) { cacheTrack(t); totalCached++; }
       } catch (err) {
-        console.log(`[cache] Failed to fetch album ${a.id}: ${err.message}`);
+        console.error(`[cache] Album ${a.id} failed: ${err.message}`);
       }
     }
   } catch (err) {
     console.error(`[cache] Pre-warm error:`, err.message);
   }
 
-  console.log(`[cache] Cache warmed: ${totalCached} tracks (${trackCache.size} unique)`);
-
-  // Log first 3 cached entries for field verification
-  let count = 0;
-  for (const [id, track] of trackCache) {
-    if (count >= 3) break;
-    console.log(`[cache] Sample track ${id}:`, JSON.stringify({
-      id: track.id,
-      title: track.title,
-      subtitle: track.subtitle,
-      img: track.img ? track.img.substring(0, 60) : null,
-      length: track.length,
-      collection_id: track.collection_id,
-      artist_id: track.artist_id,
-      artists: track.artists,
-    }));
-    count++;
-  }
+  console.log(`[cache] Warmed: ${totalCached} tracks (${trackCache.size} unique)`);
 }
 
 module.exports = {
