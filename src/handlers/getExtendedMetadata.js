@@ -17,12 +17,39 @@ function extractAlbum(track) {
   return '';
 }
 
+// Static container titles — Sonos calls getExtendedMetadata to resolve container names
+const STATIC_CONTAINERS = {
+  root: 'Root',
+  'my-library': 'My Library',
+  browse: 'Browse',
+  playlists: 'Playlists',
+  albums: 'Albums',
+  artists: 'Artists',
+  'liked-songs': 'Liked Songs',
+  'new-releases': 'New Releases',
+  search: 'Search',
+};
+
 async function getExtendedMetadata({ id }) {
   console.log(`[getExtendedMetadata] id=${id}`);
 
   if (!id) {
     console.log(`[getExtendedMetadata] ERROR: id is null/undefined`);
     const xml = mediaCollection({ id: '', itemType: 'container', title: '', albumArtURI: '' });
+    return simpleResponse('getExtendedMetadata',
+      `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
+  }
+
+  // Static containers (root, my-library, browse, playlists, albums, etc.)
+  if (STATIC_CONTAINERS[id]) {
+    const xml = mediaCollection({
+      id,
+      itemType: id === 'search' ? 'search' : 'container',
+      title: STATIC_CONTAINERS[id],
+      albumArtURI: '',
+      canPlay: false,
+      canEnumerate: true,
+    });
     return simpleResponse('getExtendedMetadata',
       `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
   }
