@@ -53,6 +53,8 @@ async function dispatch(soapAction, body, reqHost) {
     term: extractTag(body, 'term'),
   };
 
+  console.log(`[soap] ${method} id=${params.id}`);
+
   try {
     return await handler(params, reqHost);
   } catch (err) {
