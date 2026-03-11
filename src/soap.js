@@ -36,6 +36,12 @@ async function dispatch(soapAction, body) {
       '      <getSessionIdResult>sonos-session-1</getSessionIdResult>');
   }
 
+  // Handle reportAccountAction inline (no-op, Sonos calls this when adding/removing account)
+  if (method === 'reportAccountAction') {
+    const { simpleResponse } = require('./xml');
+    return simpleResponse('reportAccountAction', '');
+  }
+
   const handler = handlers[method];
   if (!handler) {
     console.log(`[soap] Unknown method: ${method}`);

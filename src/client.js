@@ -144,8 +144,66 @@ async function getAlbumContents(id) {
 }
 
 async function getStreamUrl(trackId) {
-  const data = await apiRequest('POST', `${BASE}/app/content/${trackId}/begin`, undefined, false);
-  return data.url || null;
+  // The /begin endpoint returns a 302 redirect where the Location header
+  // contains the actual stream URL. We must NOT follow the redirect.
+  const opts = {
+    method: 'POST',
+    headers: {
+      ...defaultHeaders(),
+      'Content-Type': 'application/json',
+    },
+    redirect: 'manual',
+  };
+
+  let res = await fetch(`${BASE}/app/content/${trackId}/begin`, opts);
+
+  // Re-login on 401/403
+  if (res.status === 401 || res.status === 403) {
+    console.log(`[client] Stream request got ${res.status}, re-logging in...`);
+    clearCache();
+    await login();
+    opts.headers = { ...defaultHeaders(), 'Content-Type': 'application/json' };
+    res = await fetch(`${BASE}/app/content/${trackId}/begin`, opts);
+  }
+
+  console.log(`[client] Stream request for track ${trackId} → status ${res.status}`);
+
+  // Check for redirect with Location header (the stream URL)
+  if (res.status >= 300 && res.status < 400) {
+    const location = res.headers.get('location');
+    if (location && (location.startsWith('http://') || location.startsWith('https://')) &&
+        !location.includes('/app/music/')) {
+      console.log(`[client] Got stream URL from redirect Location header`);
+      return location;
+    }
+    // If redirected back to the app (e.g. /app/music/library/playlist), session may be invalid
+    console.log(`[client] Redirect location is not a stream URL: ${location}`);
+    // Try re-login and retry once
+    console.log(`[client] Re-logging in and retrying stream request...`);
+    clearCache();
+    await login();
+    opts.headers = { ...defaultHeaders(), 'Content-Type': 'application/json' };
+    res = await fetch(`${BASE}/app/content/${trackId}/begin`, opts);
+    console.log(`[client] Stream retry for track ${trackId} → status ${res.status}`);
+    if (res.status >= 300 && res.status < 400) {
+      const retryLocation = res.headers.get('location');
+      if (retryLocation && (retryLocation.startsWith('http://') || retryLocation.startsWith('https://')) &&
+          !retryLocation.includes('/app/music/')) {
+        console.log(`[client] Got stream URL from retry redirect`);
+        return retryLocation;
+      }
+      console.log(`[client] Retry redirect location: ${retryLocation}`);
+    }
+  }
+
+  // Try parsing JSON response body as fallback
+  const text = await res.text();
+  try {
+    const data = JSON.parse(text);
+    if (data.url) return data.url;
+  } catch {}
+
+  return null;
 }
 
 async function getFeatured() {

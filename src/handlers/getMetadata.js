@@ -40,6 +40,18 @@ async function getMetadata({ id, index, count }) {
     return resultResponse('getMetadata', items, 0, items.length);
   }
 
+  // Search categories — Sonos calls getMetadata(id=search) to get searchable types
+  if (id === 'search') {
+    const categories = [
+      { id: 'search:playlists', itemType: 'search', title: 'Playlists' },
+      { id: 'search:albums', itemType: 'search', title: 'Albums' },
+      { id: 'search:artists', itemType: 'search', title: 'Artists' },
+      { id: 'search:tracks', itemType: 'search', title: 'Tracks' },
+    ];
+    const items = categories.map(c => mediaCollection(c));
+    return resultResponse('getMetadata', items, 0, items.length);
+  }
+
   // Dynamic containers
   if (id === 'playlists') {
     const playlists = await client.getPlaylists();
