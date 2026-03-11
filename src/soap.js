@@ -3,6 +3,7 @@ const getMetadata = require('./handlers/getMetadata');
 const getMediaMetadata = require('./handlers/getMediaMetadata');
 const getMediaURI = require('./handlers/getMediaURI');
 const getLastUpdate = require('./handlers/getLastUpdate');
+const getExtendedMetadata = require('./handlers/getExtendedMetadata');
 const search = require('./handlers/search');
 
 const handlers = {
@@ -10,6 +11,7 @@ const handlers = {
   getMediaMetadata,
   getMediaURI,
   getLastUpdate,
+  getExtendedMetadata,
   search,
 };
 

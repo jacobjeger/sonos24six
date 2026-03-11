@@ -7,10 +7,28 @@ const { dispatch } = require('./soap');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Sonos SMAPI WSDL / GET endpoint — Sonos verifies reachability via GET
+app.get('/smapi', (req, res) => {
+  res.set('Content-Type', 'text/xml; charset=utf-8');
+  res.send(`<?xml version="1.0" encoding="utf-8"?>
+<definitions name="Sonos"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="http://www.sonos.com/Services/1.1"
+  targetNamespace="http://www.sonos.com/Services/1.1">
+  <service name="SonosSvc">
+    <port name="SonosSvcPort" binding="tns:SonosSvcBinding">
+      <soap:address location="${req.protocol}://${req.get('host')}/smapi"/>
+    </port>
+  </service>
+</definitions>`);
+});
+
 // Parse raw XML body for SOAP requests
 app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
   const soapAction = req.headers['soapaction'] || req.headers['SOAPAction'] || '';
   console.log(`[server] SOAP request: ${soapAction}`);
+  console.log(`[server] Request body: ${typeof req.body === 'string' ? req.body.substring(0, 500) : 'empty'}`);
 
   try {
     const xml = await dispatch(soapAction, req.body);
