@@ -17,6 +17,12 @@ const trackCache = new Map();
 // Album/collection metadata cache — populated during browsing/prewarm
 const albumCache = new Map();
 
+// Artist metadata cache — populated during browsing
+const artistCache = new Map();
+
+// Playlist metadata cache — populated during browsing
+const playlistCache = new Map();
+
 function cacheTrack(track) {
   if (!track || !track.id) return;
   // Normalize: pull artist/image from nested collection if missing on track
@@ -36,7 +42,13 @@ function cacheTrack(track) {
       track.img = track.collection.cover_url || track.collection.img || '';
     }
   }
-  trackCache.set(String(track.id), track);
+  // Cache under the real content ID (playlist items may have content_id != id)
+  const contentId = track.content_id || track.id;
+  trackCache.set(String(contentId), track);
+  // Also cache under original id if different, for reverse lookups
+  if (String(track.id) !== String(contentId)) {
+    trackCache.set(String(track.id), track);
+  }
 }
 
 function hasArtists(track) {
@@ -54,6 +66,24 @@ function cacheAlbum(album) {
 
 function getCachedAlbum(id) {
   return albumCache.get(String(id)) || null;
+}
+
+function cacheArtist(artist) {
+  if (!artist || !artist.id) return;
+  artistCache.set(String(artist.id), artist);
+}
+
+function getCachedArtist(id) {
+  return artistCache.get(String(id)) || null;
+}
+
+function cachePlaylist(playlist) {
+  if (!playlist || !playlist.id) return;
+  playlistCache.set(String(playlist.id), playlist);
+}
+
+function getCachedPlaylist(id) {
+  return playlistCache.get(String(id)) || null;
 }
 
 function getCached(key) {
@@ -244,12 +274,12 @@ async function getAlbumContents(id) {
   // GET with Inertia headers returns props.collection with contents[]
   // POST only returns collection metadata without contents
   const data = await apiRequest('GET', `${BASE}/app/music/collection/${id}`, undefined, false);
-  const props = data.props || data;
-  const collection = props.collection || data;
-  const albumArtists = props.artists || collection.artists || [];
+  const props = data.props || data || {};
+  const collection = props.collection || props || {};
+  const albumArtists = props.artists || (collection && collection.artists) || [];
   const albumArtist = props.artist || (albumArtists[0]) || null;
-  const albumImg = collection.cover_url || collection.img || '';
-  const albumName = collection.name || collection.title || '';
+  const albumImg = (collection && (collection.cover_url || collection.img)) || '';
+  const albumName = (collection && (collection.name || collection.title)) || '';
 
   console.log(`[client] Album ${id} contents keys:`, Object.keys(collection));
   if (collection.contents) {
@@ -587,6 +617,10 @@ module.exports = {
   getCachedTrack,
   cacheAlbum,
   getCachedAlbum,
+  cacheArtist,
+  getCachedArtist,
+  cachePlaylist,
+  getCachedPlaylist,
   getTrackInfo,
   prewarmCache,
 };

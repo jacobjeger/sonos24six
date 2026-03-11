@@ -41,6 +41,19 @@ function extractDuration(track) {
 }
 
 async function getMediaMetadata({ id }) {
+  if (!id) {
+    console.log(`[getMediaMetadata] ERROR: id is null/undefined`);
+    const xml = mediaMetadata({ id: '', title: 'Unknown', artist: '', album: '', albumArtURI: '', duration: 0 });
+    return simpleResponse('getMediaMetadata', `      <getMediaMetadataResult>\n${xml}\n      </getMediaMetadataResult>`);
+  }
+
+  // Guard: if Sonos sends a non-track ID (e.g. playlist:XXX), return minimal metadata
+  if (id.startsWith('playlist:') || id.startsWith('album:') || id.startsWith('artist:')) {
+    console.log(`[getMediaMetadata] WARNING: received non-track id "${id}"`);
+    const xml = mediaMetadata({ id, title: id, artist: '', album: '', albumArtURI: '', duration: 0 });
+    return simpleResponse('getMediaMetadata', `      <getMediaMetadataResult>\n${xml}\n      </getMediaMetadataResult>`);
+  }
+
   const trackId = id.startsWith('track:') ? id.split(':')[1] : id;
   console.log(`[getMediaMetadata] Looking up track ${trackId}`);
 
