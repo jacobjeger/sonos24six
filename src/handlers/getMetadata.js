@@ -18,21 +18,32 @@ const STATIC = {
   ],
 };
 
+function extractArtist(track) {
+  if (!track) return '';
+  if (track.artists && track.artists.length > 0 && track.artists[0].name) return track.artists[0].name;
+  if (track.subtitle) return track.subtitle;
+  if (track.collection && track.collection.artists && track.collection.artists.length > 0) return track.collection.artists[0].name || '';
+  return '';
+}
+
+function extractAlbum(track) {
+  if (!track) return '';
+  if (track.collection) return track.collection.title || track.collection.name || '';
+  if (track.album_title) return track.album_title;
+  return '';
+}
+
 function trackToMetadata(track) {
   // Cache every track we see so getMediaMetadata can look it up later
   client.cacheTrack(track);
 
-  const artist = (track.artists && track.artists[0] && track.artists[0].name) ||
-                 track.subtitle || '';
-  const album = (track.collection && track.collection.title) ||
-                track.album_title || '';
   return mediaMetadata({
     id: `track:${track.id}`,
-    title: track.title || '',
-    artist,
-    album,
-    albumArtURI: track.img || '',
-    duration: track.length || 0,
+    title: track.title || track.name || '',
+    artist: extractArtist(track),
+    album: extractAlbum(track),
+    albumArtURI: track.img || track.content_image_url || '',
+    duration: track.length || track.length_in_seconds || 0,
   });
 }
 
@@ -140,7 +151,7 @@ async function getMetadata({ id, index, count }) {
     const playlistId = id.split(':')[1];
     const data = await client.getPlaylistContents(playlistId);
     // POST returns collection directly (no Inertia wrapper)
-    const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+    const tracks = data.contents || [];
     const items = tracks.map(t => trackToMetadata(t));
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
@@ -152,8 +163,7 @@ async function getMetadata({ id, index, count }) {
     const data = await client.getAlbumContents(albumId);
     // Cache the album metadata from the response
     if (data && data.id) client.cacheAlbum(data);
-    // POST returns collection directly (no Inertia wrapper)
-    const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+    const tracks = data.contents || [];
     const items = tracks.map(t => trackToMetadata(t));
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);

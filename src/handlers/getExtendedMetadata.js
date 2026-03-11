@@ -1,6 +1,20 @@
 const { simpleResponse, mediaMetadata, mediaCollection } = require('../xml');
 const { getCachedTrack, getCachedAlbum, getTrackInfo, getAlbumContents, cacheAlbum } = require('../client');
 
+function extractArtist(track) {
+  if (!track) return '';
+  if (track.artists && track.artists.length > 0 && track.artists[0].name) return track.artists[0].name;
+  if (track.subtitle) return track.subtitle;
+  return '';
+}
+
+function extractAlbum(track) {
+  if (!track) return '';
+  if (track.collection) return track.collection.title || track.collection.name || '';
+  if (track.album_title) return track.album_title;
+  return '';
+}
+
 async function getExtendedMetadata({ id }) {
   console.log(`[getExtendedMetadata] id=${id}`);
 
@@ -18,15 +32,11 @@ async function getExtendedMetadata({ id }) {
       }
     }
 
-    const title = (track && track.title) || `Track ${trackId}`;
-    const artist = track
-      ? ((track.artists && track.artists[0] && track.artists[0].name) || track.subtitle || '')
-      : '';
-    const album = track
-      ? ((track.collection && track.collection.title) || track.album_title || '')
-      : '';
-    const albumArtURI = (track && track.img) || '';
-    const duration = (track && track.length) || 0;
+    const title = (track && (track.title || track.name)) || `Track ${trackId}`;
+    const artist = track ? extractArtist(track) : '';
+    const album = track ? extractAlbum(track) : '';
+    const albumArtURI = (track && (track.img || track.content_image_url)) || '';
+    const duration = (track && (track.length || track.length_in_seconds)) || 0;
 
     const xml = mediaMetadata({ id, title, artist, album, albumArtURI, duration });
     return simpleResponse('getExtendedMetadata',

@@ -173,8 +173,17 @@ async function getPlaylistContents(id) {
 }
 
 async function getAlbumContents(id) {
-  const data = await apiRequest('POST', `${BASE}/app/music/collection/${id}`, undefined, false);
-  return data;
+  // GET with Inertia headers returns props.collection with contents[]
+  // POST only returns collection metadata without contents
+  const data = await apiRequest('GET', `${BASE}/app/music/collection/${id}`, undefined, false);
+  const collection = (data.props && data.props.collection) || data;
+  console.log(`[client] Album ${id} contents keys:`, Object.keys(collection));
+  if (collection.contents) {
+    console.log(`[client] Album ${id}: ${collection.contents.length} tracks`);
+  } else {
+    console.log(`[client] Album ${id}: no contents field found`);
+  }
+  return collection;
 }
 
 async function getAlbumExtras(albumId) {
@@ -315,7 +324,7 @@ async function prewarmCache() {
     for (const p of playlistSlice) {
       try {
         const data = await getPlaylistContents(p.id);
-        const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+        const tracks = data.contents || [];
         // Log raw first track from first playlist for field verification
         if (!loggedFirstPlaylistTrack && tracks.length > 0) {
           console.log(`[cache] RAW playlist track object keys:`, Object.keys(tracks[0]));
@@ -347,11 +356,11 @@ async function prewarmCache() {
     for (const a of albumSlice) {
       try {
         const data = await getAlbumContents(a.id);
-        // The POST response IS the collection object — cache it as album too
+        // getAlbumContents now returns the collection object with contents[]
         if (data && data.id) {
           cacheAlbum(data);
         }
-        const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+        const tracks = data.contents || [];
         for (const t of tracks) {
           cacheTrack(t);
           totalCached++;
