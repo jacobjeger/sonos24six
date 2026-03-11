@@ -150,7 +150,6 @@ async function getMetadata({ id, index, count }) {
   if (id.startsWith('playlist:')) {
     const playlistId = id.split(':')[1];
     const data = await client.getPlaylistContents(playlistId);
-    // POST returns collection directly (no Inertia wrapper)
     const tracks = data.contents || [];
     const items = tracks.map(t => trackToMetadata(t));
     const { sliced, total } = paginate(items, index, count);

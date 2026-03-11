@@ -189,8 +189,12 @@ async function getLikedSongs() {
 
 // Content endpoints
 async function getPlaylistContents(id) {
-  const data = await apiRequest('POST', `${BASE}/app/music/playlist/${id}`, undefined, false);
-  return data;
+  // GET returns playlist with contents[]; POST adds a song to playlist per API ref
+  const data = await apiRequest('GET', `${BASE}/app/music/playlist/${id}`, undefined, false);
+  // Inertia page wraps in props.playlist or props.collection
+  const props = data.props || {};
+  const playlist = props.playlist || props.collection || data;
+  return playlist;
 }
 
 async function getAlbumContents(id) {
@@ -321,36 +325,58 @@ async function getArtistPage(artistId) {
   };
 }
 
-// Search using the real 24Six search API
+// Quick search (typeahead) — POST returns flat array of mixed results
 async function searchQuick(term) {
   const data = await apiRequest('POST', `${BASE}/app/music/search/quick`, { q: term }, false);
-  // Returns array of mixed results: { id, name/title, type: "artist"|"collection"|"content", img }
   return Array.isArray(data) ? data : [];
 }
 
-// Fetch individual track metadata via content page
+// Full search — GET returns categorized results (songs, albums, artists, playlists)
+async function searchFull(term) {
+  const data = await apiRequest('GET', `${BASE}/app/music/search?q=${encodeURIComponent(term)}`, undefined, false);
+  const props = data.props || data;
+  console.log(`[client] Full search response keys:`, Object.keys(props));
+  return props;
+}
+
+// Fetch individual track metadata — POST returns track directly (no Inertia wrapper)
 async function getTrackInfo(trackId) {
   console.log(`[client] Fetching track info for ${trackId}`);
-  // Try POST first (returns track directly), fall back to GET (Inertia page)
+
+  // POST /app/music/content/{id} — returns raw track object (no Inertia headers needed)
   try {
-    const postData = await apiRequest('POST', `${BASE}/app/music/content/${trackId}`, undefined, false);
-    console.log(`[client] POST track ${trackId} response keys:`, Object.keys(postData));
-    if (postData && postData.id && postData.title) {
-      console.log(`[client] Track info (POST): title="${postData.title}" artists=${JSON.stringify(postData.artists?.map(a => a.name))} collection=${postData.collection?.name || 'none'}`);
-      cacheTrack(postData);
-      return postData;
+    const res = await fetch(`${BASE}/app/music/content/${trackId}`, {
+      method: 'POST',
+      headers: {
+        'Cookie': getCookieHeader(),
+        'X-XSRF-TOKEN': getXsrfHeader(),
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json, text/plain, */*',
+      },
+      redirect: 'manual',
+    });
+    console.log(`[client] POST track ${trackId} → status ${res.status}`);
+    if (res.ok) {
+      const postData = await res.json();
+      console.log(`[client] POST track ${trackId} response keys:`, Object.keys(postData));
+      if (postData && postData.id && postData.title) {
+        console.log(`[client] Track info (POST): title="${postData.title}" artists=${JSON.stringify(postData.artists?.map(a => a.name))} collection=${postData.collection?.name || 'none'}`);
+        cacheTrack(postData);
+        return postData;
+      }
     }
   } catch (err) {
-    console.log(`[client] POST track ${trackId} failed: ${err.message}, trying GET...`);
+    console.log(`[client] POST track ${trackId} failed: ${err.message}`);
   }
 
+  // Fallback: GET with Inertia returns page with content in props
+  console.log(`[client] Trying GET for track ${trackId}...`);
   const data = await apiRequest('GET', `${BASE}/app/music/content/${trackId}`, undefined, false);
   const props = data.props || data;
   console.log(`[client] GET track ${trackId} response keys:`, Object.keys(props));
-  // Try to find the track object in various response shapes
   const track = props.content || props.track || props;
   if (track && track.id) {
-    console.log(`[client] Track info (GET): title="${track.title}" subtitle="${track.subtitle}" img="${track.img}"`);
+    console.log(`[client] Track info (GET): title="${track.title}" subtitle="${track.subtitle}" img="${track.img}" artists=${JSON.stringify(track.artists?.map(a => a.name))}`);
     cacheTrack(track);
     return track;
   }
@@ -461,6 +487,7 @@ module.exports = {
   getStreamUrl,
   getFeatured,
   searchQuick,
+  searchFull,
   clearCache,
   cacheTrack,
   getCachedTrack,
