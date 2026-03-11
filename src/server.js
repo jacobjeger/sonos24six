@@ -70,52 +70,82 @@ app.get('/presentationmap.xml', (req, res) => {
 </Presentation>`);
 });
 
-// HLS manifest proxy — fetches Mux m3u8, rewrites relative URLs to absolute
+// HLS manifest proxy — resolves master→media playlist so Sonos gets segment list
 app.get('/hls/:trackId/playlist.m3u8', async (req, res) => {
   const { trackId } = req.params;
   console.log(`[hls] Manifest request for track ${trackId}`);
 
   try {
-    // Get fresh Mux HLS URL
+    // Step 1: Get fresh Mux HLS URL (master playlist)
     const muxUrl = await getStreamUrl(trackId);
     if (!muxUrl) {
       console.log(`[hls] No stream URL for track ${trackId}`);
       return res.status(502).send('No stream URL');
     }
-    console.log(`[hls] Got Mux URL: ${muxUrl.substring(0, 100)}...`);
+    console.log(`[hls] Got Mux master URL: ${muxUrl.substring(0, 120)}...`);
 
-    // Fetch the m3u8 manifest from Mux
-    const muxRes = await fetch(muxUrl);
-    if (!muxRes.ok) {
-      console.log(`[hls] Mux returned ${muxRes.status}`);
-      return res.status(502).send('Failed to fetch manifest');
+    // Step 2: Fetch the master playlist
+    const masterRes = await fetch(muxUrl);
+    if (!masterRes.ok) {
+      console.log(`[hls] Mux master returned ${masterRes.status}`);
+      return res.status(502).send('Failed to fetch master playlist');
     }
-    const manifest = await muxRes.text();
+    const masterManifest = await masterRes.text();
+    console.log(`[hls] === MASTER PLAYLIST ===`);
+    console.log(masterManifest);
+    console.log(`[hls] === END MASTER PLAYLIST ===`);
 
-    console.log(`[hls] === RAW MANIFEST FROM MUX (${manifest.length} bytes) ===`);
-    console.log(manifest);
-    console.log(`[hls] === END RAW MANIFEST ===`);
-
-    // Derive base URL for rewriting relative segment paths
-    const baseUrl = muxUrl.substring(0, muxUrl.lastIndexOf('/') + 1);
-    console.log(`[hls] Base URL for rewriting: ${baseUrl}`);
-
-    // Rewrite relative URLs to absolute
-    const rewritten = manifest.replace(/^(?!#)(\S+\.(?:m3u8|ts|m4s|mp4|aac)(\?[^\s]*)?)$/gm, (match) => {
-      if (match.startsWith('http://') || match.startsWith('https://')) {
-        return match; // already absolute
+    // Step 3: Parse out the rendition URL (line after #EXT-X-STREAM-INF)
+    const lines = masterManifest.split('\n');
+    let renditionUrl = null;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith('#EXT-X-STREAM-INF')) {
+        // Next non-empty line is the rendition URL
+        for (let j = i + 1; j < lines.length; j++) {
+          const candidate = lines[j].trim();
+          if (candidate && !candidate.startsWith('#')) {
+            renditionUrl = candidate;
+            break;
+          }
+        }
+        break;
       }
-      const abs = baseUrl + match;
-      console.log(`[hls]   rewrite: ${match.substring(0, 80)} → ${abs.substring(0, 120)}`);
-      return abs;
-    });
+    }
 
-    console.log(`[hls] === REWRITTEN MANIFEST (${rewritten.length} bytes) ===`);
-    console.log(rewritten);
-    console.log(`[hls] === END REWRITTEN MANIFEST ===`);
+    if (!renditionUrl) {
+      // Maybe it's already a media playlist (has #EXTINF)
+      if (masterManifest.includes('#EXTINF')) {
+        console.log(`[hls] Already a media playlist, serving directly`);
+        res.set('Content-Type', 'application/vnd.apple.mpegurl');
+        res.set('Cache-Control', 'no-cache');
+        return res.send(masterManifest);
+      }
+      console.log(`[hls] No rendition URL found in master playlist`);
+      return res.status(502).send('No rendition URL in master playlist');
+    }
+
+    // Make rendition URL absolute if relative
+    if (!renditionUrl.startsWith('http')) {
+      const baseUrl = muxUrl.substring(0, muxUrl.lastIndexOf('/') + 1);
+      renditionUrl = baseUrl + renditionUrl;
+    }
+    console.log(`[hls] Rendition URL: ${renditionUrl.substring(0, 120)}...`);
+
+    // Step 4: Fetch the media playlist (actual segments)
+    const mediaRes = await fetch(renditionUrl);
+    if (!mediaRes.ok) {
+      console.log(`[hls] Rendition fetch returned ${mediaRes.status}`);
+      return res.status(502).send('Failed to fetch media playlist');
+    }
+    const mediaManifest = await mediaRes.text();
+    console.log(`[hls] === MEDIA PLAYLIST (${mediaManifest.length} bytes) ===`);
+    console.log(mediaManifest);
+    console.log(`[hls] === END MEDIA PLAYLIST ===`);
+
+    // Step 5: Serve the media playlist as-is (segment URLs are already absolute)
     res.set('Content-Type', 'application/vnd.apple.mpegurl');
     res.set('Cache-Control', 'no-cache');
-    res.send(rewritten);
+    res.send(mediaManifest);
   } catch (err) {
     console.error(`[hls] Error:`, err);
     res.status(500).send('Internal error');
