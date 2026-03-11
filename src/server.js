@@ -3,7 +3,6 @@ require('dotenv').config();
 const express = require('express');
 const { login } = require('./auth');
 const { dispatch } = require('./soap');
-const { handleStreamProxy } = require('./proxy');
 
 const app = express();
 app.set('trust proxy', true);
@@ -68,11 +67,6 @@ app.get('/presentationmap.xml', (req, res) => {
   </BrowseOptions>
 </Presentation>`);
 });
-
-// Stream proxy — serves HLS audio segments as a direct audio stream for Sonos
-// Sonos needs both HEAD (to check Content-Length) and GET (with Range support)
-app.head('/stream/:trackId', handleStreamProxy);
-app.get('/stream/:trackId', handleStreamProxy);
 
 // Health check
 app.get('/', (req, res) => {

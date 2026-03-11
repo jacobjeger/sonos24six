@@ -29,7 +29,7 @@ function mediaCollection({ id, itemType, title, albumArtURI, canPlay = false, ca
         </mediaCollection>`;
 }
 
-function mediaMetadata({ id, title, mimeType = 'audio/aac', artist = '', album = '', albumArtURI = '', duration = 0 }) {
+function mediaMetadata({ id, title, mimeType = 'application/x-mpegURL', artist = '', album = '', albumArtURI = '', duration = 0 }) {
   return `        <mediaMetadata>
           <id>${escapeXml(id)}</id>
           <itemType>track</itemType>

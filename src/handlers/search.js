@@ -1,5 +1,5 @@
 const { mediaCollection, mediaMetadata, resultResponse } = require('../xml');
-const { searchLibrary } = require('../client');
+const { searchQuick } = require('../client');
 
 async function search({ id, term, index, count }) {
   if (!term) {
@@ -7,34 +7,25 @@ async function search({ id, term, index, count }) {
   }
 
   console.log(`[search] Searching for "${term}"`);
-  const results = await searchLibrary(term);
+  const results = await searchQuick(term);
 
   const items = results.map(r => {
-    if (r.type === 'track') {
+    // 24Six search returns type: "artist", "collection", "content"
+    if (r.type === 'content') {
       return mediaMetadata({
         id: `track:${r.id}`,
-        title: r.title,
+        title: r.name || r.title || '',
         artist: r.subtitle || '',
         album: '',
         albumArtURI: r.img || '',
         duration: r.length || 0,
       });
     }
-    if (r.type === 'playlist') {
-      return mediaCollection({
-        id: `playlist:${r.id}`,
-        itemType: 'playlist',
-        title: r.title,
-        albumArtURI: r.img || '',
-        canPlay: true,
-        canEnumerate: true,
-      });
-    }
-    if (r.type === 'album') {
+    if (r.type === 'collection') {
       return mediaCollection({
         id: `album:${r.id}`,
         itemType: 'album',
-        title: r.title,
+        title: r.name || r.title || '',
         albumArtURI: r.img || '',
         canPlay: true,
         canEnumerate: true,
@@ -44,7 +35,7 @@ async function search({ id, term, index, count }) {
       return mediaCollection({
         id: `artist:${r.id}`,
         itemType: 'artist',
-        title: r.name,
+        title: r.name || '',
         albumArtURI: r.img || '',
         canPlay: false,
         canEnumerate: true,

@@ -153,6 +153,11 @@ async function getAlbumContents(id) {
   return data;
 }
 
+async function getAlbumExtras(albumId) {
+  const data = await apiRequest('GET', `${BASE}/app/music/collection/${albumId}/extras`, undefined, true);
+  return (data && data.albums) || [];
+}
+
 async function getStreamUrl(trackId) {
   const url = `${BASE}/app/content/${trackId}/begin`;
 
@@ -174,7 +179,7 @@ async function getStreamUrl(trackId) {
       'Accept': 'application/json, text/plain, */*',
       'Content-Type': 'application/json',
     };
-    const body = JSON.stringify({ device_id: deviceId });
+    const body = JSON.stringify({ device_id: deviceId, interaction: true });
     console.log(`[getStreamUrl] POST ${url} with device_id=${deviceId}`);
 
     const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
@@ -231,42 +236,11 @@ async function getFeatured() {
   return (data.props && data.props.data) || data || [];
 }
 
-// Search helper — filter in-memory library data
-async function searchLibrary(term) {
-  const lower = term.toLowerCase();
-  const results = [];
-
-  const [playlists, albums, artists, songs] = await Promise.all([
-    getPlaylists(),
-    getAlbums(),
-    getArtists(),
-    getLikedSongs(),
-  ]);
-
-  for (const p of playlists) {
-    if (p.title && p.title.toLowerCase().includes(lower)) {
-      results.push({ type: 'playlist', ...p });
-    }
-  }
-  for (const a of albums) {
-    if ((a.title && a.title.toLowerCase().includes(lower)) ||
-        (a.subtitle && a.subtitle.toLowerCase().includes(lower))) {
-      results.push({ type: 'album', ...a });
-    }
-  }
-  for (const a of artists) {
-    if (a.name && a.name.toLowerCase().includes(lower)) {
-      results.push({ type: 'artist', ...a });
-    }
-  }
-  for (const s of songs) {
-    if ((s.title && s.title.toLowerCase().includes(lower)) ||
-        (s.subtitle && s.subtitle.toLowerCase().includes(lower))) {
-      results.push({ type: 'track', ...s });
-    }
-  }
-
-  return results;
+// Search using the real 24Six search API
+async function searchQuick(term) {
+  const data = await apiRequest('POST', `${BASE}/app/music/search/quick`, { q: term }, false);
+  // Returns array of mixed results: { id, name/title, type: "artist"|"collection"|"content", img }
+  return Array.isArray(data) ? data : [];
 }
 
 module.exports = {
@@ -276,8 +250,9 @@ module.exports = {
   getLikedSongs,
   getPlaylistContents,
   getAlbumContents,
+  getAlbumExtras,
   getStreamUrl,
   getFeatured,
-  searchLibrary,
+  searchQuick,
   clearCache,
 };
