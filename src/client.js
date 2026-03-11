@@ -5,6 +5,9 @@ const { login, getCookieHeader, getXsrfHeader, getInertiaVersion } = require('./
 const BASE = 'https://24six.app';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Device ID captured from API responses (required for streaming)
+let deviceId = null;
+
 // Simple in-memory cache
 const cache = new Map();
 
@@ -104,7 +107,14 @@ async function apiRequest(method, url, body, useCache) {
 
   if (Object.keys(data).length > 0) {
     console.log(`[client]   response keys:`, Object.keys(data));
-    if (data.props) console.log(`[client]   props keys:`, Object.keys(data.props));
+    if (data.props) {
+      console.log(`[client]   props keys:`, Object.keys(data.props));
+      // Capture device_id from API responses (needed for streaming)
+      if (data.props.device_id) {
+        deviceId = data.props.device_id;
+        console.log(`[client]   captured device_id: ${deviceId}`);
+      }
+    }
   }
 
   if (cacheKey) setCache(cacheKey, data);
@@ -146,110 +156,73 @@ async function getAlbumContents(id) {
 async function getStreamUrl(trackId) {
   const url = `${BASE}/app/content/${trackId}/begin`;
 
-  // Helper: check if a Location header looks like a stream/CDN URL (not an app redirect)
-  function isStreamUrl(loc) {
-    return loc && (loc.startsWith('http://') || loc.startsWith('https://'))
-      && !loc.includes('24six.app/app/') && !loc.includes('24six.app/login');
+  // Ensure we have a device_id (fetch a library page if needed)
+  if (!deviceId) {
+    console.log(`[getStreamUrl] No device_id cached, fetching from library...`);
+    await getPlaylists();
+  }
+  if (!deviceId) {
+    console.log(`[getStreamUrl] Still no device_id after library fetch!`);
+    return null;
   }
 
-  // Helper: try a fetch with given options and extract stream URL
-  async function tryFetch(method, headers, followRedirects, body) {
-    const opts = { method, headers, redirect: followRedirects ? 'follow' : 'manual' };
-    if (body) {
-      opts.body = typeof body === 'string' ? body : JSON.stringify(body);
-      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
-    }
-    const res = await fetch(url, opts);
-    console.log(`[client] Stream ${method} (follow=${followRedirects}) → status ${res.status}, url=${res.url || 'N/A'}`);
+  async function doStreamRequest() {
+    const headers = {
+      'Cookie': getCookieHeader(),
+      'X-XSRF-TOKEN': getXsrfHeader(),
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': 'application/json, text/plain, */*',
+      'Content-Type': 'application/json',
+    };
+    const body = JSON.stringify({ device_id: deviceId });
+    console.log(`[getStreamUrl] POST ${url} with device_id=${deviceId}`);
 
-    // If following redirects, check if final URL is a CDN/stream URL
-    if (followRedirects && res.url && isStreamUrl(res.url)) {
-      console.log(`[client] Got stream URL from followed redirect: ${res.url.substring(0, 80)}`);
-      return res.url;
-    }
+    const res = await fetch(url, { method: 'POST', headers, body, redirect: 'manual' });
+    console.log(`[getStreamUrl] Response status: ${res.status}`);
 
-    // If manual redirect, check Location header
-    if (!followRedirects && res.status >= 300 && res.status < 400) {
+    // If redirect, check Location header for stream URL
+    if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get('location');
-      console.log(`[client] Redirect Location: ${location}`);
-      if (isStreamUrl(location)) {
+      console.log(`[getStreamUrl] Redirect Location: ${location}`);
+      if (location && !location.includes('24six.app/app/') && !location.includes('24six.app/login')) {
         return location;
       }
+      return null;
     }
 
-    // Try parsing response body as JSON
+    // Parse JSON response
     const text = await res.text();
     try {
       const data = JSON.parse(text);
-      console.log(`[client] Stream response JSON keys:`, Object.keys(data));
-      // Log validation errors for debugging
-      if (data.message) console.log(`[client] Stream response message:`, data.message);
-      if (data.errors) console.log(`[client] Stream response errors:`, JSON.stringify(data.errors));
-      // Look for common URL fields
+      console.log(`[getStreamUrl] Response keys:`, Object.keys(data));
+      if (data.message) console.log(`[getStreamUrl] Message:`, data.message);
+      if (data.errors) console.log(`[getStreamUrl] Errors:`, JSON.stringify(data.errors));
       if (data.url) return data.url;
       if (data.stream_url) return data.stream_url;
       if (data.src) return data.src;
-      if (data.data && data.data.url) return data.data.url;
-      if (data.props && data.props.url) return data.props.url;
-      if (data.props && data.props.data && data.props.data.url) return data.props.data.url;
     } catch {
-      // Check if HTML contains an audio/media URL
-      const srcMatch = text.match(/https?:\/\/[^"'\s]+\.(mp3|m4a|aac|mp4|ogg|opus|wav|flac)[^"'\s]*/i);
-      if (srcMatch) {
-        console.log(`[client] Found media URL in HTML response`);
-        return srcMatch[0];
-      }
+      console.log(`[getStreamUrl] Non-JSON response (${text.length} chars):`, text.substring(0, 200));
     }
 
     return null;
   }
 
-  console.log(`[getStreamUrl] Trying strategies for track ${trackId}...`);
-  const plainHeaders = () => ({
-    'Cookie': getCookieHeader(),
-    'X-XSRF-TOKEN': getXsrfHeader(),
-    'X-Requested-With': 'XMLHttpRequest',
-    'Accept': 'application/json, text/plain, */*',
-    'Content-Type': 'application/json',
-  });
-
-  // The 422 tells us the endpoint needs a body. Try various body formats:
-  const bodies = [
-    { content_id: parseInt(trackId, 10) },
-    { id: parseInt(trackId, 10) },
-    { content_id: trackId },
-    { id: trackId },
-    {},
-  ];
-
-  let result;
-  for (const body of bodies) {
-    console.log(`[getStreamUrl] Trying POST with body:`, JSON.stringify(body));
-    result = await tryFetch('POST', plainHeaders(), false, body);
-    if (result) return result;
-  }
-
-  // Try without body (no Content-Type)
-  const noCTHeaders = () => ({
-    'Cookie': getCookieHeader(),
-    'X-XSRF-TOKEN': getXsrfHeader(),
-    'X-Requested-With': 'XMLHttpRequest',
-    'Accept': 'application/json, text/plain, */*',
-  });
-  result = await tryFetch('POST', noCTHeaders(), false);
+  // Try with current session
+  let result = await doStreamRequest();
   if (result) return result;
 
-  // Re-login and try the first body format again
-  console.log(`[getStreamUrl] All strategies failed, re-logging in...`);
+  // Re-login and retry once
+  console.log(`[getStreamUrl] First attempt failed, re-logging in...`);
   clearCache();
   await login();
+  // Re-fetch device_id after login
+  deviceId = null;
+  await getPlaylists();
 
-  for (const body of bodies.slice(0, 2)) {
-    result = await tryFetch('POST', plainHeaders(), false, body);
-    if (result) return result;
-  }
+  result = await doStreamRequest();
+  if (result) return result;
 
-  console.log(`[getStreamUrl] All strategies exhausted for track ${trackId}`);
+  console.log(`[getStreamUrl] All attempts failed for track ${trackId}`);
   return null;
 }
 
