@@ -41,7 +41,7 @@ function setCachedAudio(trackId, data) {
  * Sonos speakers require:
  * - HEAD request support (to get Content-Length before GET)
  * - Range request support (for seeking)
- * - Proper Content-Type (audio/mp4 works best)
+ * - Proper Content-Type (audio/aac for ADTS streams)
  */
 async function handleStreamProxy(req, res) {
   const trackId = req.params.trackId;
@@ -82,7 +82,7 @@ function serveAudio(req, res, data) {
   const total = data.length;
 
   // Common headers
-  res.set('Content-Type', 'audio/mp4');
+  res.set('Content-Type', 'audio/aac');
   res.set('Accept-Ranges', 'bytes');
   res.set('Cache-Control', 'public, max-age=300');
 
