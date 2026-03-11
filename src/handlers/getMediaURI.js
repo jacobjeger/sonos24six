@@ -1,4 +1,4 @@
-const { simpleResponse } = require('../xml');
+const { simpleResponse, escapeXml } = require('../xml');
 const { getStreamUrl } = require('../client');
 
 async function getMediaURI({ id }) {
@@ -10,10 +10,10 @@ async function getMediaURI({ id }) {
     throw new Error(`No stream URL returned for track ${trackId}`);
   }
 
-  console.log(`[getMediaURI] Got stream URL: ${url.substring(0, 80)}...`);
+  console.log(`[getMediaURI] Got stream URL: ${url.substring(0, 120)}...`);
 
   return simpleResponse('getMediaURI',
-    `      <getMediaURIResult>${url}</getMediaURIResult>`);
+    `      <getMediaURIResult>${escapeXml(url)}</getMediaURIResult>`);
 }
 
 module.exports = getMediaURI;
