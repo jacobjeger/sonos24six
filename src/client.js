@@ -314,6 +314,18 @@ async function getFeatured() {
   const data = await apiRequest('GET', `${BASE}/app/music/featured-homepage`, undefined, true);
   const props = data.props || data;
   console.log(`[client] Featured homepage props keys:`, Object.keys(props));
+  // Debug: dump shapes of all props
+  for (const key of Object.keys(props)) {
+    if (['errors', 'device_id', 'meta'].includes(key)) continue;
+    const val = props[key];
+    if (Array.isArray(val)) {
+      console.log(`[client] Featured props.${key}: array(${val.length})${val.length > 0 ? ' first=' + JSON.stringify(Object.keys(val[0] || {})) : ''}`);
+    } else if (val && typeof val === 'object') {
+      console.log(`[client] Featured props.${key}: object keys=${JSON.stringify(Object.keys(val))}`);
+    } else {
+      console.log(`[client] Featured props.${key}: ${typeof val}`);
+    }
+  }
   // Return the full props so the handler can pick what it needs
   return props;
 }
@@ -323,6 +335,20 @@ async function getArtistPage(artistId) {
   const data = await apiRequest('GET', `${BASE}/app/music/artist/${artistId}`, undefined, true);
   const props = data.props || data;
   console.log(`[client] Artist ${artistId} props keys:`, Object.keys(props));
+
+  // Debug: dump raw shapes of key fields
+  for (const key of ['albums', 'collections', 'top_songs', 'latest', 'featured_on', 'artist']) {
+    const val = props[key];
+    if (val === undefined) continue;
+    if (Array.isArray(val)) {
+      console.log(`[client] Artist ${artistId} props.${key}: array(${val.length})`);
+    } else if (val && typeof val === 'object') {
+      console.log(`[client] Artist ${artistId} props.${key}: object keys=${JSON.stringify(Object.keys(val))}`);
+      if (val.data) console.log(`[client] Artist ${artistId} props.${key}.data: array(${Array.isArray(val.data) ? val.data.length : typeof val.data})`);
+    } else {
+      console.log(`[client] Artist ${artistId} props.${key}: ${typeof val} = ${JSON.stringify(val)}`);
+    }
+  }
 
   // Extract albums — can be array or paginated object with .data
   const rawAlbums = props.albums || props.collections || [];
