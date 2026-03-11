@@ -63,6 +63,14 @@ async function getMediaMetadata({ id }) {
   const albumArtURI = extractArt(track);
   const duration = extractDuration(track);
 
+  // Debug: dump full track when artist or art missing
+  if (track && (!artist || !albumArtURI)) {
+    console.log(`[getMediaMetadata] DEBUG track ${trackId} keys:`, Object.keys(track));
+    console.log(`[getMediaMetadata] DEBUG track ${trackId} artists:`, JSON.stringify(track.artists));
+    console.log(`[getMediaMetadata] DEBUG track ${trackId} collection:`, JSON.stringify(track.collection && { name: track.collection.name, title: track.collection.title, artists: track.collection.artists }));
+    console.log(`[getMediaMetadata] DEBUG track ${trackId} subtitle:`, track.subtitle, 'img:', track.img, 'content_image_url:', track.content_image_url);
+  }
+
   console.log(`[getMediaMetadata] Returning: title="${title}" artist="${artist}" album="${album}" art="${albumArtURI ? 'yes' : 'no'}" dur=${duration}`);
 
   const xml = mediaMetadata({
