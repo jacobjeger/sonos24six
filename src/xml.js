@@ -18,11 +18,11 @@ ${body}
 </soap:Envelope>`;
 }
 
-function mediaCollection({ id, itemType, title, albumArtURI, canPlay = false, canEnumerate = true }) {
+function mediaCollection({ id, itemType, title, artist, albumArtURI, canPlay = false, canEnumerate = true }) {
   return `        <mediaCollection>
           <id>${escapeXml(id)}</id>
           <itemType>${escapeXml(itemType)}</itemType>
-          <title>${escapeXml(title)}</title>
+          <title>${escapeXml(title)}</title>${artist ? `\n          <artist>${escapeXml(artist)}</artist>` : ''}
           <albumArtURI>${escapeXml(albumArtURI || '')}</albumArtURI>
           <canPlay>${canPlay}</canPlay>
           <canEnumerate>${canEnumerate}</canEnumerate>

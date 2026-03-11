@@ -1,5 +1,7 @@
 const { simpleResponse, mediaMetadata, mediaCollection } = require('../xml');
-const { getCachedTrack, getCachedAlbum, getTrackInfo, getAlbumContents, cacheAlbum } = require('../client');
+const { getCachedTrack, getCachedAlbum, getCachedArtist, getCachedPlaylist,
+        getTrackInfo, getAlbumContents, getArtistPage, getPlaylistContents,
+        cacheAlbum, cacheArtist, cachePlaylist } = require('../client');
 
 function extractArtist(track) {
   if (!track) return '';
@@ -18,7 +20,14 @@ function extractAlbum(track) {
 async function getExtendedMetadata({ id }) {
   console.log(`[getExtendedMetadata] id=${id}`);
 
-  if (id && id.startsWith('track:')) {
+  if (!id) {
+    console.log(`[getExtendedMetadata] ERROR: id is null/undefined`);
+    const xml = mediaCollection({ id: '', itemType: 'container', title: '', albumArtURI: '' });
+    return simpleResponse('getExtendedMetadata',
+      `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
+  }
+
+  if (id.startsWith('track:')) {
     const trackId = id.split(':')[1];
     let track = getCachedTrack(trackId);
 
@@ -55,7 +64,7 @@ async function getExtendedMetadata({ id }) {
   }
 
   // Album — look up from cache or fetch
-  if (id && id.startsWith('album:')) {
+  if (id.startsWith('album:')) {
     const albumId = id.split(':')[1];
     let album = getCachedAlbum(albumId);
 
@@ -76,7 +85,8 @@ async function getExtendedMetadata({ id }) {
       id,
       itemType: 'album',
       title: (album && (album.title || album.name)) || `Album ${albumId}`,
-      albumArtURI: (album && album.img) || '',
+      artist: (album && album.subtitle) || '',
+      albumArtURI: (album && (album.cover_url || album.img)) || '',
       canPlay: true,
       canEnumerate: true,
     });
@@ -84,13 +94,29 @@ async function getExtendedMetadata({ id }) {
       `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
   }
 
-  // Playlist
-  if (id && id.startsWith('playlist:')) {
+  // Playlist — look up from cache or fetch
+  if (id.startsWith('playlist:')) {
+    const playlistId = id.split(':')[1];
+    let playlist = getCachedPlaylist(playlistId);
+
+    if (!playlist) {
+      console.log(`[getExtendedMetadata] Playlist ${playlistId} not in cache, fetching...`);
+      try {
+        const data = await getPlaylistContents(playlistId);
+        if (data && data.id) {
+          cachePlaylist(data);
+          playlist = data;
+        }
+      } catch (err) {
+        console.log(`[getExtendedMetadata] Failed to fetch playlist ${playlistId}: ${err.message}`);
+      }
+    }
+
     const xml = mediaCollection({
       id,
       itemType: 'playlist',
-      title: id,
-      albumArtURI: '',
+      title: (playlist && (playlist.title || playlist.name)) || `Playlist ${playlistId}`,
+      albumArtURI: (playlist && (playlist.cover_url || playlist.img)) || '',
       canPlay: true,
       canEnumerate: true,
     });
@@ -98,13 +124,29 @@ async function getExtendedMetadata({ id }) {
       `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
   }
 
-  // Artist
-  if (id && id.startsWith('artist:')) {
+  // Artist — look up from cache or fetch
+  if (id.startsWith('artist:')) {
+    const artistId = id.split(':')[1];
+    let artist = getCachedArtist(artistId);
+
+    if (!artist) {
+      console.log(`[getExtendedMetadata] Artist ${artistId} not in cache, fetching...`);
+      try {
+        const data = await getArtistPage(artistId);
+        if (data && data.artist) {
+          artist = data.artist;
+          cacheArtist(artist);
+        }
+      } catch (err) {
+        console.log(`[getExtendedMetadata] Failed to fetch artist ${artistId}: ${err.message}`);
+      }
+    }
+
     const xml = mediaCollection({
       id,
       itemType: 'artist',
-      title: id,
-      albumArtURI: '',
+      title: (artist && (artist.name || artist.title)) || `Artist ${artistId}`,
+      albumArtURI: (artist && (artist.img || artist.cover_url)) || '',
       canPlay: false,
       canEnumerate: true,
     });

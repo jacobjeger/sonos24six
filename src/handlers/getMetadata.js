@@ -37,8 +37,11 @@ function trackToMetadata(track) {
   // Cache every track we see so getMediaMetadata can look it up later
   client.cacheTrack(track);
 
+  // Playlist content items may have the real track ID in content_id
+  const trackId = track.content_id || track.id;
+
   return mediaMetadata({
-    id: `track:${track.id}`,
+    id: `track:${trackId}`,
     title: track.title || track.name || '',
     artist: extractArtist(track),
     album: extractAlbum(track),
@@ -54,6 +57,12 @@ function paginate(items, index, count) {
 
 async function getMetadata({ id, index, count }) {
   console.log(`[getMetadata] id=${id} index=${index} count=${count}`);
+
+  // Null guard — if SOAP extraction failed, return empty
+  if (!id) {
+    console.log(`[getMetadata] ERROR: id is null/undefined`);
+    return resultResponse('getMetadata', [], 0, 0);
+  }
 
   // Static containers
   if (STATIC[id]) {
@@ -73,177 +82,226 @@ async function getMetadata({ id, index, count }) {
 
   // Dynamic containers — Library
   if (id === 'playlists') {
-    const playlists = await client.getPlaylists();
-    console.log(`[getMetadata] Playlists: fetched ${playlists.length} playlists`);
-    const items = playlists.map(p => mediaCollection({
-      id: `playlist:${p.id}`,
-      itemType: 'playlist',
-      title: p.title || p.name || '',
-      albumArtURI: p.img || '',
-      canPlay: true,
-      canEnumerate: true,
-    }));
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+    try {
+      const playlists = await client.getPlaylists();
+      console.log(`[getMetadata] Playlists: fetched ${playlists.length} playlists`);
+      const items = playlists.map(p => {
+        client.cachePlaylist(p);
+        return mediaCollection({
+          id: `playlist:${p.id}`,
+          itemType: 'playlist',
+          title: p.title || p.name || '',
+          albumArtURI: p.cover_url || p.img || '',
+          canPlay: true,
+          canEnumerate: true,
+        });
+      });
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching playlists:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   if (id === 'albums') {
-    const albums = await client.getAlbums();
-    console.log(`[getMetadata] Albums: fetched ${albums.length} albums`);
-    const items = albums.map(a => {
-      client.cacheAlbum(a);
-      return mediaCollection({
-        id: `album:${a.id}`,
-        itemType: 'album',
-        title: a.title || a.name || '',
-        artist: a.subtitle || '',
-        albumArtURI: a.img || '',
-        canPlay: true,
-        canEnumerate: true,
+    try {
+      const albums = await client.getAlbums();
+      console.log(`[getMetadata] Albums: fetched ${albums.length} albums`);
+      const items = albums.map(a => {
+        client.cacheAlbum(a);
+        return mediaCollection({
+          id: `album:${a.id}`,
+          itemType: 'album',
+          title: a.title || a.name || '',
+          artist: a.subtitle || '',
+          albumArtURI: a.cover_url || a.img || '',
+          canPlay: true,
+          canEnumerate: true,
+        });
       });
-    });
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching albums:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   if (id === 'artists') {
-    const artists = await client.getArtists();
-    console.log(`[getMetadata] Artists: fetched ${artists.length} artists`);
-    const items = artists.map(a => mediaCollection({
-      id: `artist:${a.id}`,
-      itemType: 'artist',
-      title: a.name || a.title || '',
-      albumArtURI: a.img || '',
-      canPlay: false,
-      canEnumerate: true,
-    }));
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+    try {
+      const artists = await client.getArtists();
+      console.log(`[getMetadata] Artists: fetched ${artists.length} artists`);
+      const items = artists.map(a => {
+        client.cacheArtist(a);
+        return mediaCollection({
+          id: `artist:${a.id}`,
+          itemType: 'artist',
+          title: a.name || a.title || '',
+          albumArtURI: a.img || '',
+          canPlay: false,
+          canEnumerate: true,
+        });
+      });
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching artists:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   if (id === 'liked-songs') {
-    const songs = await client.getLikedSongs();
-    console.log(`[getMetadata] Liked songs: fetched ${songs.length} songs`);
-    const items = songs.map(s => trackToMetadata(s));
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+    try {
+      const songs = await client.getLikedSongs();
+      console.log(`[getMetadata] Liked songs: fetched ${songs.length} songs`);
+      const items = songs.map(s => trackToMetadata(s));
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching liked songs:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   if (id === 'new-releases') {
-    const featured = await client.getFeatured();
-    const items = [];
-    const seen = new Set(); // dedupe by id
+    try {
+      const featured = await client.getFeatured();
+      const items = [];
+      const seen = new Set(); // dedupe by id
 
-    // Helper to add a collection/album item
-    function addAlbum(c) {
-      if (!c || !c.id || seen.has(c.id)) return;
-      seen.add(c.id);
-      items.push(mediaCollection({
-        id: `album:${c.id}`,
-        itemType: 'album',
-        title: c.title || c.name || '',
-        artist: c.subtitle || '',
-        albumArtURI: c.img || c.cover_url || '',
-        canPlay: true,
-        canEnumerate: true,
-      }));
-    }
+      // Helper to add a collection/album item
+      function addAlbum(c) {
+        if (!c || !c.id || seen.has(c.id)) return;
+        seen.add(c.id);
+        items.push(mediaCollection({
+          id: `album:${c.id}`,
+          itemType: 'album',
+          title: c.title || c.name || '',
+          artist: c.subtitle || '',
+          albumArtURI: c.cover_url || c.img || '',
+          canPlay: true,
+          canEnumerate: true,
+        }));
+      }
 
-    // Extract from all props — each can be: array, {headline, tiles}, {data: [...]}, or other
-    for (const key of Object.keys(featured)) {
-      if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
-      const val = featured[key];
-      if (!val) continue;
+      // Extract from all props — each can be: array, {headline, tiles}, {data: [...]}, or other
+      for (const key of Object.keys(featured)) {
+        if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
+        const val = featured[key];
+        if (!val) continue;
 
-      if (Array.isArray(val)) {
-        // Direct array of items
-        console.log(`[getMetadata] new-releases: props.${key} is array(${val.length})`);
-        for (const c of val) addAlbum(c);
-      } else if (val && typeof val === 'object') {
-        // {headline, tiles} or {data: [...]} pattern
-        const tiles = val.tiles || val.data || val.items || [];
-        if (Array.isArray(tiles) && tiles.length > 0) {
-          console.log(`[getMetadata] new-releases: props.${key} has ${tiles.length} tiles (headline="${val.headline || ''}")`);
-          for (const c of tiles) addAlbum(c);
+        if (Array.isArray(val)) {
+          console.log(`[getMetadata] new-releases: props.${key} is array(${val.length})`);
+          for (const c of val) addAlbum(c);
+        } else if (val && typeof val === 'object') {
+          const tiles = val.tiles || val.data || val.items || [];
+          if (Array.isArray(tiles) && tiles.length > 0) {
+            console.log(`[getMetadata] new-releases: props.${key} has ${tiles.length} tiles (headline="${val.headline || ''}")`);
+            for (const c of tiles) addAlbum(c);
+          }
         }
       }
-    }
 
-    console.log(`[getMetadata] New releases: ${items.length} items from featured page`);
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+      console.log(`[getMetadata] New releases: ${items.length} items from featured page`);
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching new releases:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   // Playlist contents
-  if (id.startsWith('playlist:')) {
-    const playlistId = id.split(':')[1];
-    console.log(`[getMetadata] Fetching playlist contents for ${playlistId}`);
-    const data = await client.getPlaylistContents(playlistId);
-    const tracks = data.contents || [];
-    console.log(`[getMetadata] Playlist ${playlistId}: ${tracks.length} tracks`);
-    const items = tracks.map(t => trackToMetadata(t));
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+  if (id && id.startsWith('playlist:')) {
+    try {
+      const playlistId = id.split(':')[1];
+      console.log(`[getMetadata] Fetching playlist contents for ${playlistId}`);
+      const data = await client.getPlaylistContents(playlistId);
+      client.cachePlaylist(data);
+      const tracks = data.contents || [];
+      if (tracks.length > 0) {
+        console.log(`[getMetadata] Playlist track[0] keys: ${Object.keys(tracks[0]).join(', ')}`);
+        console.log(`[getMetadata] Playlist track[0] id=${tracks[0].id} content_id=${tracks[0].content_id}`);
+      }
+      console.log(`[getMetadata] Playlist ${playlistId}: ${tracks.length} tracks`);
+      const items = tracks.map(t => trackToMetadata(t));
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching playlist contents:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   // Album contents
-  if (id.startsWith('album:')) {
-    const albumId = id.split(':')[1];
-    console.log(`[getMetadata] Fetching album contents for ${albumId}`);
-    const data = await client.getAlbumContents(albumId);
-    // Cache the album metadata from the response
-    if (data && data.id) client.cacheAlbum(data);
-    const tracks = data.contents || [];
-    console.log(`[getMetadata] Album ${albumId}: ${tracks.length} tracks, title="${data.title || data.name || 'unknown'}"`);
-    const items = tracks.map(t => trackToMetadata(t));
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
+  if (id && id.startsWith('album:')) {
+    try {
+      const albumId = id.split(':')[1];
+      console.log(`[getMetadata] Fetching album contents for ${albumId}`);
+      const data = await client.getAlbumContents(albumId);
+      if (data && data.id) client.cacheAlbum(data);
+      const tracks = data.contents || [];
+      console.log(`[getMetadata] Album ${albumId}: ${tracks.length} tracks, title="${data.title || data.name || 'unknown'}"`);
+      const items = tracks.map(t => trackToMetadata(t));
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching album contents:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   // Artist — show top songs then albums
-  if (id.startsWith('artist:')) {
-    const artistId = id.split(':')[1];
-    console.log(`[getMetadata] Fetching artist page for ${artistId}`);
-    const { albums, topSongs, latest, featuredOn } = await client.getArtistPage(artistId);
-    const items = [];
-    const seenAlbumIds = new Set();
+  if (id && id.startsWith('artist:')) {
+    try {
+      const artistId = id.split(':')[1];
+      console.log(`[getMetadata] Fetching artist page for ${artistId}`);
+      const { artist, albums, topSongs, latest, featuredOn } = await client.getArtistPage(artistId);
+      if (artist) client.cacheArtist(artist);
+      const items = [];
+      const seenAlbumIds = new Set();
 
-    // Add top songs first
-    for (const s of topSongs) {
-      items.push(trackToMetadata(s));
+      // Add top songs first
+      for (const s of topSongs) {
+        items.push(trackToMetadata(s));
+      }
+
+      // Helper to add album, deduped
+      function addAlbum(a) {
+        if (!a || !a.id || seenAlbumIds.has(String(a.id))) return;
+        seenAlbumIds.add(String(a.id));
+        client.cacheAlbum(a);
+        items.push(mediaCollection({
+          id: `album:${a.id}`,
+          itemType: 'album',
+          title: a.title || a.name || '',
+          artist: a.subtitle || '',
+          albumArtURI: a.cover_url || a.img || '',
+          canPlay: true,
+          canEnumerate: true,
+        }));
+      }
+
+      // Add latest album first (if present)
+      if (latest && latest.id) {
+        console.log(`[getMetadata] Artist ${artistId}: adding latest album "${latest.title || latest.name}" (id=${latest.id})`);
+        addAlbum(latest);
+      }
+
+      // Then regular albums
+      for (const a of albums) addAlbum(a);
+
+      // Then featured_on albums
+      for (const a of featuredOn) addAlbum(a);
+
+      console.log(`[getMetadata] Artist ${artistId}: ${topSongs.length} songs + ${seenAlbumIds.size} albums = ${items.length} items`);
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] Error fetching artist page:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
     }
-
-    // Helper to add album, deduped
-    function addAlbum(a) {
-      if (!a || !a.id || seenAlbumIds.has(String(a.id))) return;
-      seenAlbumIds.add(String(a.id));
-      client.cacheAlbum(a);
-      items.push(mediaCollection({
-        id: `album:${a.id}`,
-        itemType: 'album',
-        title: a.title || a.name || '',
-        artist: a.subtitle || '',
-        albumArtURI: a.img || a.cover_url || '',
-        canPlay: true,
-        canEnumerate: true,
-      }));
-    }
-
-    // Add latest album first (if present)
-    if (latest && latest.id) {
-      console.log(`[getMetadata] Artist ${artistId}: adding latest album "${latest.title || latest.name}" (id=${latest.id})`);
-      addAlbum(latest);
-    }
-
-    // Then regular albums
-    for (const a of albums) addAlbum(a);
-
-    // Then featured_on albums
-    for (const a of featuredOn) addAlbum(a);
-
-    console.log(`[getMetadata] Artist ${artistId}: ${topSongs.length} songs + ${seenAlbumIds.size} albums = ${items.length} items`);
-    const { sliced, total } = paginate(items, index, count);
-    return resultResponse('getMetadata', sliced, index, total);
   }
 
   // Fallback: empty result
