@@ -1,8 +1,10 @@
 require('dotenv').config();
 
 const express = require('express');
+const fetch = require('node-fetch');
 const { login } = require('./auth');
 const { dispatch } = require('./soap');
+const { getStreamUrl } = require('./client');
 
 const app = express();
 app.set('trust proxy', true);
@@ -66,6 +68,49 @@ app.get('/presentationmap.xml', (req, res) => {
     </Option>
   </BrowseOptions>
 </Presentation>`);
+});
+
+// HLS manifest proxy — fetches Mux m3u8, rewrites relative URLs to absolute
+app.get('/hls/:trackId/playlist.m3u8', async (req, res) => {
+  const { trackId } = req.params;
+  console.log(`[hls] Manifest request for track ${trackId}`);
+
+  try {
+    // Get fresh Mux HLS URL
+    const muxUrl = await getStreamUrl(trackId);
+    if (!muxUrl) {
+      console.log(`[hls] No stream URL for track ${trackId}`);
+      return res.status(502).send('No stream URL');
+    }
+    console.log(`[hls] Got Mux URL: ${muxUrl.substring(0, 100)}...`);
+
+    // Fetch the m3u8 manifest from Mux
+    const muxRes = await fetch(muxUrl);
+    if (!muxRes.ok) {
+      console.log(`[hls] Mux returned ${muxRes.status}`);
+      return res.status(502).send('Failed to fetch manifest');
+    }
+    const manifest = await muxRes.text();
+
+    // Derive base URL for rewriting relative segment paths
+    const baseUrl = muxUrl.substring(0, muxUrl.lastIndexOf('/') + 1);
+
+    // Rewrite relative URLs to absolute
+    const rewritten = manifest.replace(/^(?!#)(\S+\.(?:m3u8|ts|m4s|mp4|aac)(\?[^\s]*)?)$/gm, (match) => {
+      if (match.startsWith('http://') || match.startsWith('https://')) {
+        return match; // already absolute
+      }
+      return baseUrl + match;
+    });
+
+    console.log(`[hls] Serving rewritten manifest (${rewritten.length} bytes)`);
+    res.set('Content-Type', 'application/vnd.apple.mpegurl');
+    res.set('Cache-Control', 'no-cache');
+    res.send(rewritten);
+  } catch (err) {
+    console.error(`[hls] Error:`, err);
+    res.status(500).send('Internal error');
+  }
 });
 
 // Health check

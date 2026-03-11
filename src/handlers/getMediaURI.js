@@ -1,20 +1,18 @@
 const { simpleResponse, escapeXml } = require('../xml');
-const { getStreamUrl } = require('../client');
 
-async function getMediaURI({ id }) {
+function getProxyUrl(trackId, reqHost) {
+  const host = process.env.RAILWAY_PUBLIC_DOMAIN || process.env.PUBLIC_HOST || reqHost;
+  const protocol = host && host.includes('localhost') ? 'http' : 'https';
+  return `${protocol}://${host}/hls/${trackId}/playlist.m3u8`;
+}
+
+async function getMediaURI({ id }, reqHost) {
   const trackId = id.startsWith('track:') ? id.split(':')[1] : id;
-  console.log(`[getMediaURI] Fetching stream for track ${trackId}`);
+  const proxyUrl = getProxyUrl(trackId, reqHost);
+  console.log(`[getMediaURI] Returning HLS manifest proxy URL: ${proxyUrl}`);
 
-  const url = await getStreamUrl(trackId);
-  if (!url) {
-    throw new Error(`No stream URL returned for track ${trackId}`);
-  }
-
-  console.log(`[getMediaURI] Returning Mux HLS URL: ${url.substring(0, 100)}...`);
-
-  // Return the Mux m3u8 URL directly — Sonos supports HLS natively
   return simpleResponse('getMediaURI',
-    `      <getMediaURIResult>${escapeXml(url)}</getMediaURIResult>`);
+    `      <getMediaURIResult>${escapeXml(proxyUrl)}</getMediaURIResult>`);
 }
 
 module.exports = getMediaURI;
