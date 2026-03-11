@@ -124,6 +124,36 @@ async function login() {
 
   loggedIn = true;
   console.log('[auth] Login complete');
+
+  // Step 5: Fetch an app page (full HTML) to capture Inertia version
+  console.log('[auth] Fetching Inertia version from app page...');
+  const appPage = await fetch(`${BASE}/app/music/library/playlist`, {
+    headers: {
+      'Cookie': getCookieHeader(),
+      'Accept': 'text/html, application/xhtml+xml',
+    },
+    redirect: 'follow',
+  });
+  parseCookies(appPage);
+  const appHtml = await appPage.text();
+  const $app = cheerio.load(appHtml);
+  const appDataPage = $app('[data-page]').attr('data-page');
+  if (appDataPage) {
+    try {
+      const pageData = JSON.parse(appDataPage);
+      inertiaVersion = pageData.version || '';
+      console.log('[auth] Got Inertia version:', inertiaVersion);
+    } catch {}
+  }
+  if (!inertiaVersion) {
+    const vMatch = appHtml.match(/version["']\s*:\s*["']([^"']+)["']/);
+    if (vMatch) {
+      inertiaVersion = vMatch[1];
+      console.log('[auth] Got Inertia version from script:', inertiaVersion);
+    } else {
+      console.log('[auth] WARNING: Could not find Inertia version');
+    }
+  }
 }
 
 function isLoggedIn() {

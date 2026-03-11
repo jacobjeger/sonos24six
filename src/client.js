@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const cheerio = require('cheerio');
 const { login, getCookieHeader, getXsrfHeader, getInertiaVersion } = require('./auth');
 
 const BASE = 'https://24six.app';
@@ -65,14 +66,17 @@ async function apiRequest(method, url, body, useCache) {
     res = await fetch(url, opts);
   }
 
-  // Inertia 409 = version mismatch, refetch with new version
+  // Inertia 409 = version mismatch, fall back to full HTML page
   if (res.status === 409) {
-    const location = res.headers.get('x-inertia-location');
-    console.log(`[client] Inertia 409, location: ${location}`);
-    if (location) {
-      opts.headers = defaultHeaders();
-      res = await fetch(location, { ...opts, method: 'GET' });
-    }
+    console.log(`[client] Inertia 409 — fetching full HTML page instead`);
+    res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Cookie': getCookieHeader(),
+        'Accept': 'text/html, application/xhtml+xml',
+      },
+      redirect: 'follow',
+    });
   }
 
   console.log(`[client] ${method} ${url} → status ${res.status}`);
@@ -81,8 +85,21 @@ async function apiRequest(method, url, body, useCache) {
   try {
     data = JSON.parse(text);
   } catch {
-    console.log(`[client] Non-JSON response (${text.length} chars):`, text.substring(0, 500));
-    data = {};
+    // Response is HTML — extract Inertia data from data-page attribute
+    const $ = cheerio.load(text);
+    const dataPage = $('[data-page]').attr('data-page');
+    if (dataPage) {
+      try {
+        data = JSON.parse(dataPage);
+        console.log(`[client]   extracted Inertia data from HTML, keys:`, Object.keys(data));
+      } catch {
+        console.log(`[client] Could not parse data-page JSON`);
+        data = {};
+      }
+    } else {
+      console.log(`[client] Non-JSON, no data-page (${text.length} chars):`, text.substring(0, 300));
+      data = {};
+    }
   }
 
   if (Object.keys(data).length > 0) {
