@@ -22,6 +22,17 @@ async function getExtendedMetadata({ id }) {
     const trackId = id.split(':')[1];
     let track = getCachedTrack(trackId);
 
+    // If cached but incomplete, re-fetch
+    if (track && (!extractArtist(track) || !(track.img || track.content_image_url))) {
+      console.log(`[getExtendedMetadata] Track ${trackId} cached but incomplete, re-fetching...`);
+      try {
+        const fresh = await getTrackInfo(trackId);
+        if (fresh) track = fresh;
+      } catch (err) {
+        console.log(`[getExtendedMetadata] Re-fetch failed: ${err.message}`);
+      }
+    }
+
     // Fallback: fetch from API if not cached
     if (!track) {
       console.log(`[getExtendedMetadata] Track ${trackId} not in cache, fetching...`);

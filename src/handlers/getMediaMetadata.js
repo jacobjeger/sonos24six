@@ -47,7 +47,18 @@ async function getMediaMetadata({ id }) {
   // Check the in-memory cache first (populated during browsing / prewarm)
   let track = getCachedTrack(trackId);
 
-  // If not cached, try fetching from 24Six API
+  // If cached but missing artist/art, re-fetch to get complete data
+  if (track && (!extractArtist(track) || !extractArt(track))) {
+    console.log(`[getMediaMetadata] Track ${trackId} cached but incomplete (artist="${extractArtist(track)}", art=${!!extractArt(track)}), re-fetching...`);
+    try {
+      const fresh = await getTrackInfo(trackId);
+      if (fresh) track = fresh;
+    } catch (err) {
+      console.log(`[getMediaMetadata] Re-fetch failed: ${err.message}`);
+    }
+  }
+
+  // If not cached at all, try fetching from 24Six API
   if (!track) {
     console.log(`[getMediaMetadata] Track ${trackId} not in cache, fetching from API...`);
     try {

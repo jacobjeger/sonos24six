@@ -19,7 +19,28 @@ const albumCache = new Map();
 
 function cacheTrack(track) {
   if (!track || !track.id) return;
+  // Normalize: pull artist/image from nested collection if missing on track
+  if (track.collection) {
+    if (!track.subtitle && !hasArtists(track)) {
+      // Try collection's subtitle or artists
+      if (track.collection.subtitle) {
+        track.subtitle = track.collection.subtitle;
+      } else if (track.collection.artists && track.collection.artists.length > 0) {
+        track.subtitle = track.collection.artists[0].name || '';
+        if (!track.artists || track.artists.length === 0) {
+          track.artists = track.collection.artists;
+        }
+      }
+    }
+    if (!track.img && !track.content_image_url) {
+      track.img = track.collection.cover_url || track.collection.img || '';
+    }
+  }
   trackCache.set(String(track.id), track);
+}
+
+function hasArtists(track) {
+  return track.artists && track.artists.length > 0 && track.artists[0] && track.artists[0].name;
 }
 
 function getCachedTrack(id) {
@@ -310,13 +331,26 @@ async function searchQuick(term) {
 // Fetch individual track metadata via content page
 async function getTrackInfo(trackId) {
   console.log(`[client] Fetching track info for ${trackId}`);
+  // Try POST first (returns track directly), fall back to GET (Inertia page)
+  try {
+    const postData = await apiRequest('POST', `${BASE}/app/music/content/${trackId}`, undefined, false);
+    console.log(`[client] POST track ${trackId} response keys:`, Object.keys(postData));
+    if (postData && postData.id && postData.title) {
+      console.log(`[client] Track info (POST): title="${postData.title}" artists=${JSON.stringify(postData.artists?.map(a => a.name))} collection=${postData.collection?.name || 'none'}`);
+      cacheTrack(postData);
+      return postData;
+    }
+  } catch (err) {
+    console.log(`[client] POST track ${trackId} failed: ${err.message}, trying GET...`);
+  }
+
   const data = await apiRequest('GET', `${BASE}/app/music/content/${trackId}`, undefined, false);
   const props = data.props || data;
-  console.log(`[client] Track info response keys:`, Object.keys(props));
+  console.log(`[client] GET track ${trackId} response keys:`, Object.keys(props));
   // Try to find the track object in various response shapes
   const track = props.content || props.track || props;
   if (track && track.id) {
-    console.log(`[client] Track info found: title="${track.title}" subtitle="${track.subtitle}" img="${track.img}"`);
+    console.log(`[client] Track info (GET): title="${track.title}" subtitle="${track.subtitle}" img="${track.img}"`);
     cacheTrack(track);
     return track;
   }
