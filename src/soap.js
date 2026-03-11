@@ -21,7 +21,7 @@ function extractTag(xml, tag) {
   return match ? match[1].trim() : null;
 }
 
-async function dispatch(soapAction, body) {
+async function dispatch(soapAction, body, reqHost) {
   // Extract method name from SOAPAction header
   // e.g. "http://www.sonos.com/Services/1.1#getMetadata"
   const methodMatch = soapAction && soapAction.match(/#(\w+)/);
@@ -59,7 +59,7 @@ async function dispatch(soapAction, body) {
   console.log(`[soap] Params:`, JSON.stringify(params));
 
   try {
-    return await handler(params);
+    return await handler(params, reqHost);
   } catch (err) {
     console.error(`[soap] Handler error for ${method}:`, err);
     return soapFault('Server.ServiceError', err.message || 'Internal error');

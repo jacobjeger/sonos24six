@@ -3,8 +3,10 @@ require('dotenv').config();
 const express = require('express');
 const { login } = require('./auth');
 const { dispatch } = require('./soap');
+const { handleStreamProxy } = require('./proxy');
 
 const app = express();
+app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 
 // Sonos SMAPI WSDL / GET endpoint — Sonos verifies reachability via GET
@@ -31,7 +33,7 @@ app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res)
   console.log(`[server] Request body: ${typeof req.body === 'string' ? req.body.substring(0, 500) : 'empty'}`);
 
   try {
-    const xml = await dispatch(soapAction, req.body);
+    const xml = await dispatch(soapAction, req.body, req.get('host'));
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(xml);
   } catch (err) {
@@ -66,6 +68,9 @@ app.get('/presentationmap.xml', (req, res) => {
   </BrowseOptions>
 </Presentation>`);
 });
+
+// Stream proxy — serves HLS audio segments as a direct audio stream for Sonos
+app.get('/stream/:trackId', handleStreamProxy);
 
 // Health check
 app.get('/', (req, res) => {
