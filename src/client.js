@@ -176,10 +176,31 @@ async function getAlbumContents(id) {
   // GET with Inertia headers returns props.collection with contents[]
   // POST only returns collection metadata without contents
   const data = await apiRequest('GET', `${BASE}/app/music/collection/${id}`, undefined, false);
-  const collection = (data.props && data.props.collection) || data;
+  const props = data.props || data;
+  const collection = props.collection || data;
+  const albumArtists = props.artists || collection.artists || [];
+  const albumArtist = props.artist || (albumArtists[0]) || null;
+  const albumImg = collection.cover_url || collection.img || '';
+  const albumName = collection.name || collection.title || '';
+
   console.log(`[client] Album ${id} contents keys:`, Object.keys(collection));
   if (collection.contents) {
     console.log(`[client] Album ${id}: ${collection.contents.length} tracks`);
+    // Enrich each track with album info if missing
+    for (const t of collection.contents) {
+      if (!t.subtitle && albumArtist) {
+        t.subtitle = albumArtist.name || albumArtist.title || '';
+      }
+      if (!t.img && albumImg) {
+        t.img = albumImg;
+      }
+      if (!t.artists || t.artists.length === 0) {
+        t.artists = albumArtists.length > 0 ? albumArtists : (albumArtist ? [albumArtist] : []);
+      }
+      if (!t.collection) {
+        t.collection = { id: collection.id, name: albumName, title: albumName, artists: albumArtists };
+      }
+    }
   } else {
     console.log(`[client] Album ${id}: no contents field found`);
   }
