@@ -153,8 +153,12 @@ async function getStreamUrl(trackId) {
   }
 
   // Helper: try a fetch with given options and extract stream URL
-  async function tryFetch(method, headers, followRedirects) {
+  async function tryFetch(method, headers, followRedirects, body) {
     const opts = { method, headers, redirect: followRedirects ? 'follow' : 'manual' };
+    if (body) {
+      opts.body = typeof body === 'string' ? body : JSON.stringify(body);
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    }
     const res = await fetch(url, opts);
     console.log(`[client] Stream ${method} (follow=${followRedirects}) → status ${res.status}, url=${res.url || 'N/A'}`);
 
@@ -178,6 +182,9 @@ async function getStreamUrl(trackId) {
     try {
       const data = JSON.parse(text);
       console.log(`[client] Stream response JSON keys:`, Object.keys(data));
+      // Log validation errors for debugging
+      if (data.message) console.log(`[client] Stream response message:`, data.message);
+      if (data.errors) console.log(`[client] Stream response errors:`, JSON.stringify(data.errors));
       // Look for common URL fields
       if (data.url) return data.url;
       if (data.stream_url) return data.stream_url;
@@ -197,47 +204,50 @@ async function getStreamUrl(trackId) {
     return null;
   }
 
-  // Strategy 1: POST without Inertia headers (plain AJAX-style request)
   console.log(`[getStreamUrl] Trying strategies for track ${trackId}...`);
-  const plainHeaders = {
+  const plainHeaders = () => ({
     'Cookie': getCookieHeader(),
     'X-XSRF-TOKEN': getXsrfHeader(),
     'X-Requested-With': 'XMLHttpRequest',
     'Accept': 'application/json, text/plain, */*',
-  };
+    'Content-Type': 'application/json',
+  });
 
-  let result = await tryFetch('POST', plainHeaders, false);
+  // The 422 tells us the endpoint needs a body. Try various body formats:
+  const bodies = [
+    { content_id: parseInt(trackId, 10) },
+    { id: parseInt(trackId, 10) },
+    { content_id: trackId },
+    { id: trackId },
+    {},
+  ];
+
+  let result;
+  for (const body of bodies) {
+    console.log(`[getStreamUrl] Trying POST with body:`, JSON.stringify(body));
+    result = await tryFetch('POST', plainHeaders(), false, body);
+    if (result) return result;
+  }
+
+  // Try without body (no Content-Type)
+  const noCTHeaders = () => ({
+    'Cookie': getCookieHeader(),
+    'X-XSRF-TOKEN': getXsrfHeader(),
+    'X-Requested-With': 'XMLHttpRequest',
+    'Accept': 'application/json, text/plain, */*',
+  });
+  result = await tryFetch('POST', noCTHeaders(), false);
   if (result) return result;
 
-  // Strategy 2: POST without Inertia, follow redirects (CDN URL may be final destination)
-  result = await tryFetch('POST', plainHeaders, true);
-  if (result) return result;
-
-  // Strategy 3: GET without Inertia headers
-  result = await tryFetch('GET', plainHeaders, false);
-  if (result) return result;
-
-  // Strategy 4: GET following redirects
-  result = await tryFetch('GET', plainHeaders, true);
-  if (result) return result;
-
-  // Strategy 5: POST with Inertia headers (original approach)
-  const inertiaHeaders = { ...defaultHeaders(), 'Content-Type': 'application/json' };
-  result = await tryFetch('POST', inertiaHeaders, false);
-  if (result) return result;
-
-  // Strategy 6: Re-login and try plain POST again
+  // Re-login and try the first body format again
   console.log(`[getStreamUrl] All strategies failed, re-logging in...`);
   clearCache();
   await login();
-  plainHeaders['Cookie'] = getCookieHeader();
-  plainHeaders['X-XSRF-TOKEN'] = getXsrfHeader();
 
-  result = await tryFetch('POST', plainHeaders, false);
-  if (result) return result;
-
-  result = await tryFetch('POST', plainHeaders, true);
-  if (result) return result;
+  for (const body of bodies.slice(0, 2)) {
+    result = await tryFetch('POST', plainHeaders(), false, body);
+    if (result) return result;
+  }
 
   console.log(`[getStreamUrl] All strategies exhausted for track ${trackId}`);
   return null;
