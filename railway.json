@@ -1,5 +1,14 @@
 {
-  "build": { "builder": "NIXPACKS" },
+  "build": {
+    "builder": "NIXPACKS",
+    "nixpacksPlan": {
+      "phases": {
+        "setup": {
+          "nixPkgs": ["nodejs-20_x", "npm-9_x"]
+        }
+      }
+    }
+  },
   "deploy": {
     "startCommand": "node src/server.js",
     "restartPolicyType": "ON_FAILURE",
