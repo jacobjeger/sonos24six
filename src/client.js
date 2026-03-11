@@ -265,6 +265,94 @@ async function searchQuick(term) {
   return Array.isArray(data) ? data : [];
 }
 
+// Fetch individual track metadata via content page
+async function getTrackInfo(trackId) {
+  console.log(`[client] Fetching track info for ${trackId}`);
+  const data = await apiRequest('GET', `${BASE}/app/music/content/${trackId}`, undefined, false);
+  const props = data.props || data;
+  console.log(`[client] Track info response keys:`, Object.keys(props));
+  // Try to find the track object in various response shapes
+  const track = props.content || props.track || props;
+  if (track && track.id) {
+    console.log(`[client] Track info found: title="${track.title}" subtitle="${track.subtitle}" img="${track.img}"`);
+    cacheTrack(track);
+    return track;
+  }
+  console.log(`[client] Could not extract track from response`);
+  return null;
+}
+
+// Pre-warm the track cache on startup
+async function prewarmCache() {
+  console.log(`[cache] Pre-warming track cache...`);
+  let totalCached = 0;
+
+  try {
+    // 1. Cache liked songs
+    const likedSongs = await getLikedSongs();
+    for (const s of likedSongs) {
+      cacheTrack(s);
+      totalCached++;
+    }
+    console.log(`[cache] Cached ${likedSongs.length} liked songs`);
+
+    // 2. Get playlists and cache their contents (up to 10)
+    const playlists = await getPlaylists();
+    const playlistSlice = playlists.slice(0, 10);
+    for (const p of playlistSlice) {
+      try {
+        const data = await getPlaylistContents(p.id);
+        const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+        for (const t of tracks) {
+          cacheTrack(t);
+          totalCached++;
+        }
+        console.log(`[cache] Playlist "${p.title || p.id}": ${tracks.length} tracks`);
+      } catch (err) {
+        console.log(`[cache] Failed to fetch playlist ${p.id}: ${err.message}`);
+      }
+    }
+
+    // 3. Get albums and cache their contents (up to 20)
+    const albums = await getAlbums();
+    const albumSlice = albums.slice(0, 20);
+    for (const a of albumSlice) {
+      try {
+        const data = await getAlbumContents(a.id);
+        const tracks = data.contents || (data.props && data.props.collection && data.props.collection.contents) || [];
+        for (const t of tracks) {
+          cacheTrack(t);
+          totalCached++;
+        }
+        console.log(`[cache] Album "${a.title || a.id}": ${tracks.length} tracks`);
+      } catch (err) {
+        console.log(`[cache] Failed to fetch album ${a.id}: ${err.message}`);
+      }
+    }
+  } catch (err) {
+    console.error(`[cache] Pre-warm error:`, err.message);
+  }
+
+  console.log(`[cache] Cache warmed: ${totalCached} tracks (${trackCache.size} unique)`);
+
+  // Log first 3 cached entries for field verification
+  let count = 0;
+  for (const [id, track] of trackCache) {
+    if (count >= 3) break;
+    console.log(`[cache] Sample track ${id}:`, JSON.stringify({
+      id: track.id,
+      title: track.title,
+      subtitle: track.subtitle,
+      img: track.img ? track.img.substring(0, 60) : null,
+      length: track.length,
+      collection_id: track.collection_id,
+      artist_id: track.artist_id,
+      artists: track.artists,
+    }));
+    count++;
+  }
+}
+
 module.exports = {
   getPlaylists,
   getAlbums,
@@ -280,4 +368,6 @@ module.exports = {
   clearCache,
   cacheTrack,
   getCachedTrack,
+  getTrackInfo,
+  prewarmCache,
 };

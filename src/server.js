@@ -4,7 +4,7 @@ const express = require('express');
 const fetch = require('node-fetch');
 const { login } = require('./auth');
 const { dispatch } = require('./soap');
-const { getStreamUrl } = require('./client');
+const { getStreamUrl, prewarmCache } = require('./client');
 
 const app = express();
 app.set('trust proxy', true);
@@ -163,6 +163,8 @@ async function start() {
     console.log('[server] Logging in to 24Six...');
     await login();
     console.log('[server] Login successful');
+    // Pre-warm track cache in the background (don't block startup)
+    prewarmCache().catch(err => console.error('[server] Prewarm failed:', err.message));
   } catch (err) {
     console.error('[server] Login failed:', err.message);
     console.log('[server] Starting anyway — will retry on first request');

@@ -1,16 +1,21 @@
 const { mediaMetadata, simpleResponse } = require('../xml');
-const { getCachedTrack, getAlbumContents, cacheTrack } = require('../client');
+const { getCachedTrack, getTrackInfo } = require('../client');
 
 async function getMediaMetadata({ id }) {
   const trackId = id.startsWith('track:') ? id.split(':')[1] : id;
   console.log(`[getMediaMetadata] Looking up track ${trackId}`);
 
-  // Check the in-memory cache first (populated during browsing)
+  // Check the in-memory cache first (populated during browsing / prewarm)
   let track = getCachedTrack(trackId);
 
-  // If not cached and track has a collection_id, try fetching the album
+  // If not cached, try fetching from 24Six API
   if (!track) {
-    console.log(`[getMediaMetadata] Track ${trackId} not in cache`);
+    console.log(`[getMediaMetadata] Track ${trackId} not in cache, fetching from API...`);
+    try {
+      track = await getTrackInfo(trackId);
+    } catch (err) {
+      console.log(`[getMediaMetadata] Failed to fetch track ${trackId}: ${err.message}`);
+    }
   }
 
   const title = (track && (track.title || '')) || `Track ${trackId}`;
