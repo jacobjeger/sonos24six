@@ -54,11 +54,20 @@ async function search({ id, term, index, count }) {
   // Try full search first (GET /app/music/search?q=) — returns categorized results
   try {
     const props = await searchFull(term);
+    console.log(`[search] Full search props keys:`, Object.keys(props));
     // Full search returns props with: songs/contents, collections/albums, artists, playlists
-    const songs = props.songs || props.contents || props.content || [];
-    const albums = props.collections || props.albums || [];
-    const artists = props.artists || [];
-    const playlists = props.playlists || [];
+    // Each can be array or {headline, tiles} object
+    function extractArr(val) {
+      if (!val) return [];
+      if (Array.isArray(val)) return val;
+      if (val.tiles) return val.tiles;
+      if (val.data) return val.data;
+      return [];
+    }
+    const songs = extractArr(props.songs || props.contents || props.content);
+    const albums = extractArr(props.collections || props.albums);
+    const artists = extractArr(props.artists);
+    const playlists = extractArr(props.playlists);
 
     console.log(`[search] Full search results: ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${playlists.length} playlists`);
 

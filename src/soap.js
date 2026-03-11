@@ -59,7 +59,9 @@ async function dispatch(soapAction, body, reqHost) {
   console.log(`[soap] Params:`, JSON.stringify(params));
 
   try {
-    return await handler(params, reqHost);
+    const result = await handler(params, reqHost);
+    console.log(`[soap] ${method} response: ${result ? result.length : 0} bytes`);
+    return result;
   } catch (err) {
     console.error(`[soap] Handler error for ${method}:`, err);
     return soapFault('Server.ServiceError', err.message || 'Internal error');

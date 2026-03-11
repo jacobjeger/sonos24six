@@ -58,6 +58,7 @@ async function getMetadata({ id, index, count }) {
   // Static containers
   if (STATIC[id]) {
     const items = STATIC[id].map(item => mediaCollection(item));
+    console.log(`[getMetadata] Static container "${id}": returning ${items.length} items`);
     return resultResponse('getMetadata', items, 0, items.length);
   }
 
@@ -73,6 +74,7 @@ async function getMetadata({ id, index, count }) {
   // Dynamic containers — Library
   if (id === 'playlists') {
     const playlists = await client.getPlaylists();
+    console.log(`[getMetadata] Playlists: fetched ${playlists.length} playlists`);
     const items = playlists.map(p => mediaCollection({
       id: `playlist:${p.id}`,
       itemType: 'playlist',
@@ -87,6 +89,7 @@ async function getMetadata({ id, index, count }) {
 
   if (id === 'albums') {
     const albums = await client.getAlbums();
+    console.log(`[getMetadata] Albums: fetched ${albums.length} albums`);
     const items = albums.map(a => {
       client.cacheAlbum(a);
       return mediaCollection({
@@ -105,6 +108,7 @@ async function getMetadata({ id, index, count }) {
 
   if (id === 'artists') {
     const artists = await client.getArtists();
+    console.log(`[getMetadata] Artists: fetched ${artists.length} artists`);
     const items = artists.map(a => mediaCollection({
       id: `artist:${a.id}`,
       itemType: 'artist',
@@ -119,6 +123,7 @@ async function getMetadata({ id, index, count }) {
 
   if (id === 'liked-songs') {
     const songs = await client.getLikedSongs();
+    console.log(`[getMetadata] Liked songs: fetched ${songs.length} songs`);
     const items = songs.map(s => trackToMetadata(s));
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
@@ -127,46 +132,43 @@ async function getMetadata({ id, index, count }) {
   if (id === 'new-releases') {
     const featured = await client.getFeatured();
     const items = [];
-    // Featured homepage returns various props: data (sections), or direct arrays
-    // Try to extract albums/collections from all possible locations
-    const sections = featured.data || [];
-    if (Array.isArray(sections)) {
-      for (const section of sections) {
-        const collections = section.data || section.collections || section.items || [];
-        if (Array.isArray(collections)) {
-          for (const c of collections) {
-            if (c.type === 'collection' || c.content_type === 'music' || c.id) {
-              items.push(mediaCollection({
-                id: `album:${c.id}`,
-                itemType: 'album',
-                title: c.title || c.name || '',
-                artist: c.subtitle || '',
-                albumArtURI: c.img || c.cover_url || '',
-                canPlay: true,
-                canEnumerate: true,
-              }));
-            }
-          }
+    const seen = new Set(); // dedupe by id
+
+    // Helper to add a collection/album item
+    function addAlbum(c) {
+      if (!c || !c.id || seen.has(c.id)) return;
+      seen.add(c.id);
+      items.push(mediaCollection({
+        id: `album:${c.id}`,
+        itemType: 'album',
+        title: c.title || c.name || '',
+        artist: c.subtitle || '',
+        albumArtURI: c.img || c.cover_url || '',
+        canPlay: true,
+        canEnumerate: true,
+      }));
+    }
+
+    // Extract from all props — each can be: array, {headline, tiles}, {data: [...]}, or other
+    for (const key of Object.keys(featured)) {
+      if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
+      const val = featured[key];
+      if (!val) continue;
+
+      if (Array.isArray(val)) {
+        // Direct array of items
+        console.log(`[getMetadata] new-releases: props.${key} is array(${val.length})`);
+        for (const c of val) addAlbum(c);
+      } else if (val && typeof val === 'object') {
+        // {headline, tiles} or {data: [...]} pattern
+        const tiles = val.tiles || val.data || val.items || [];
+        if (Array.isArray(tiles) && tiles.length > 0) {
+          console.log(`[getMetadata] new-releases: props.${key} has ${tiles.length} tiles (headline="${val.headline || ''}")`);
+          for (const c of tiles) addAlbum(c);
         }
       }
     }
-    // Also check for direct new_releases, trending, etc. at props level
-    for (const key of ['new_releases', 'trending', 'new_albums', 'new_singles', 'popular']) {
-      const arr = featured[key];
-      if (Array.isArray(arr)) {
-        for (const c of arr) {
-          items.push(mediaCollection({
-            id: `album:${c.id}`,
-            itemType: 'album',
-            title: c.title || c.name || '',
-            artist: c.subtitle || '',
-            albumArtURI: c.img || c.cover_url || '',
-            canPlay: true,
-            canEnumerate: true,
-          }));
-        }
-      }
-    }
+
     console.log(`[getMetadata] New releases: ${items.length} items from featured page`);
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
@@ -175,8 +177,10 @@ async function getMetadata({ id, index, count }) {
   // Playlist contents
   if (id.startsWith('playlist:')) {
     const playlistId = id.split(':')[1];
+    console.log(`[getMetadata] Fetching playlist contents for ${playlistId}`);
     const data = await client.getPlaylistContents(playlistId);
     const tracks = data.contents || [];
+    console.log(`[getMetadata] Playlist ${playlistId}: ${tracks.length} tracks`);
     const items = tracks.map(t => trackToMetadata(t));
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
@@ -185,10 +189,12 @@ async function getMetadata({ id, index, count }) {
   // Album contents
   if (id.startsWith('album:')) {
     const albumId = id.split(':')[1];
+    console.log(`[getMetadata] Fetching album contents for ${albumId}`);
     const data = await client.getAlbumContents(albumId);
     // Cache the album metadata from the response
     if (data && data.id) client.cacheAlbum(data);
     const tracks = data.contents || [];
+    console.log(`[getMetadata] Album ${albumId}: ${tracks.length} tracks, title="${data.title || data.name || 'unknown'}"`);
     const items = tracks.map(t => trackToMetadata(t));
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
@@ -198,16 +204,19 @@ async function getMetadata({ id, index, count }) {
   if (id.startsWith('artist:')) {
     const artistId = id.split(':')[1];
     console.log(`[getMetadata] Fetching artist page for ${artistId}`);
-    const { albums, topSongs } = await client.getArtistPage(artistId);
+    const { albums, topSongs, latest, featuredOn } = await client.getArtistPage(artistId);
     const items = [];
+    const seenAlbumIds = new Set();
 
     // Add top songs first
     for (const s of topSongs) {
       items.push(trackToMetadata(s));
     }
 
-    // Then albums
-    for (const a of albums) {
+    // Helper to add album, deduped
+    function addAlbum(a) {
+      if (!a || !a.id || seenAlbumIds.has(String(a.id))) return;
+      seenAlbumIds.add(String(a.id));
       client.cacheAlbum(a);
       items.push(mediaCollection({
         id: `album:${a.id}`,
@@ -220,7 +229,19 @@ async function getMetadata({ id, index, count }) {
       }));
     }
 
-    console.log(`[getMetadata] Artist ${artistId}: ${topSongs.length} songs + ${albums.length} albums = ${items.length} items`);
+    // Add latest album first (if present)
+    if (latest && latest.id) {
+      console.log(`[getMetadata] Artist ${artistId}: adding latest album "${latest.title || latest.name}" (id=${latest.id})`);
+      addAlbum(latest);
+    }
+
+    // Then regular albums
+    for (const a of albums) addAlbum(a);
+
+    // Then featured_on albums
+    for (const a of featuredOn) addAlbum(a);
+
+    console.log(`[getMetadata] Artist ${artistId}: ${topSongs.length} songs + ${seenAlbumIds.size} albums = ${items.length} items`);
     const { sliced, total } = paginate(items, index, count);
     return resultResponse('getMetadata', sliced, index, total);
   }

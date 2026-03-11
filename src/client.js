@@ -166,25 +166,67 @@ async function apiRequest(method, url, body, useCache) {
   return data;
 }
 
+// Helper: extract array from API response (handles .data, .tiles, direct array)
+function extractList(data, label) {
+  const props = data.props || data;
+  if (!props) {
+    console.log(`[client] extractList(${label}): no props in response`);
+    return [];
+  }
+  // props.data is the most common pattern for library endpoints
+  const raw = props.data;
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object') {
+    // {headline, tiles} or paginated {data: [...]}
+    if (raw.tiles) {
+      console.log(`[client] extractList(${label}): using .tiles (${raw.tiles.length} items)`);
+      return raw.tiles;
+    }
+    if (raw.data) {
+      console.log(`[client] extractList(${label}): using .data.data (${raw.data.length} items)`);
+      return raw.data;
+    }
+  }
+  // Fallback: check top-level array keys
+  for (const key of Object.keys(props)) {
+    if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
+    const val = props[key];
+    if (Array.isArray(val) && val.length > 0 && val[0] && val[0].id) {
+      console.log(`[client] extractList(${label}): using props.${key} (${val.length} items)`);
+      return val;
+    }
+  }
+  console.log(`[client] extractList(${label}): no data found, props keys:`, Object.keys(props));
+  return [];
+}
+
 // Library endpoints
 async function getPlaylists() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/playlist`, undefined, true);
-  return (data.props && data.props.data) || [];
+  const result = extractList(data, 'playlists');
+  console.log(`[client] getPlaylists: ${result.length} items`);
+  return result;
 }
 
 async function getAlbums() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/collection`, undefined, true);
-  return (data.props && data.props.data) || [];
+  const result = extractList(data, 'albums');
+  console.log(`[client] getAlbums: ${result.length} items`);
+  return result;
 }
 
 async function getArtists() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/artist`, undefined, true);
-  return (data.props && data.props.data) || [];
+  const result = extractList(data, 'artists');
+  console.log(`[client] getArtists: ${result.length} items`);
+  return result;
 }
 
 async function getLikedSongs() {
   const data = await apiRequest('GET', `${BASE}/app/music/library/content`, undefined, true);
-  return (data.props && data.props.data) || [];
+  const result = extractList(data, 'liked-songs');
+  console.log(`[client] getLikedSongs: ${result.length} items`);
+  return result;
 }
 
 // Content endpoints
@@ -194,6 +236,7 @@ async function getPlaylistContents(id) {
   // Inertia page wraps in props.playlist or props.collection
   const props = data.props || {};
   const playlist = props.playlist || props.collection || data;
+  console.log(`[client] getPlaylistContents(${id}): keys=${Object.keys(playlist)}, contents=${(playlist.contents || []).length} tracks`);
   return playlist;
 }
 
@@ -350,22 +393,29 @@ async function getArtistPage(artistId) {
     }
   }
 
-  // Extract albums — can be array or paginated object with .data
+  // Extract albums — can be array or {headline, tiles} object
   const rawAlbums = props.albums || props.collections || [];
-  const albums = Array.isArray(rawAlbums) ? rawAlbums : (rawAlbums.data || []);
+  const albums = Array.isArray(rawAlbums) ? rawAlbums : (rawAlbums.tiles || rawAlbums.data || []);
 
-  // Extract top songs
+  // Extract top songs — can be array or {headline, tiles} object
   const rawSongs = props.top_songs || [];
-  const topSongs = Array.isArray(rawSongs) ? rawSongs : (rawSongs.data || []);
+  const topSongs = Array.isArray(rawSongs) ? rawSongs : (rawSongs.tiles || rawSongs.data || []);
 
-  console.log(`[client] Artist ${artistId}: ${albums.length} albums, ${topSongs.length} top songs`);
+  // Extract featured_on — can be array or {headline, tiles} object
+  const rawFeatured = props.featured_on || [];
+  const featuredOn = Array.isArray(rawFeatured) ? rawFeatured : (rawFeatured.tiles || rawFeatured.data || []);
+
+  // Extract latest album (single object, not array)
+  const latest = props.latest || null;
+
+  console.log(`[client] Artist ${artistId}: ${albums.length} albums, ${topSongs.length} top songs, ${featuredOn.length} featured_on, latest=${latest ? latest.id || 'yes' : 'none'}`);
 
   return {
     artist: props.artist || props,
     albums,
     topSongs,
-    latest: props.latest || [],
-    featuredOn: props.featured_on || [],
+    latest,
+    featuredOn,
   };
 }
 

@@ -123,7 +123,7 @@ async function login() {
   console.log('[auth] Profile login, status:', profileLogin.status);
 
   loggedIn = true;
-  console.log('[auth] Login complete');
+  console.log(`[auth] Login complete, cookies: ${Object.keys(cookies).join(', ')}`);
 
   // Step 5: Fetch an app page (full HTML) to capture Inertia version
   console.log('[auth] Fetching Inertia version from app page...');
