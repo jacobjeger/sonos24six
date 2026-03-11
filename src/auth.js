@@ -6,6 +6,7 @@ const BASE = 'https://24six.app';
 // Module-level cookie jar and state
 let cookies = {};
 let loggedIn = false;
+let inertiaVersion = '';
 
 function parseCookies(response) {
   const raw = response.headers.raw()['set-cookie'];
@@ -52,6 +53,25 @@ async function login() {
   if (!csrfToken) {
     throw new Error('[auth] Could not find _token in login page');
   }
+
+  // Extract Inertia version from page (data-page attribute or @inertiaHead)
+  const dataPage = $('[data-page]').attr('data-page');
+  if (dataPage) {
+    try {
+      const pageData = JSON.parse(dataPage);
+      inertiaVersion = pageData.version || '';
+      console.log('[auth] Got Inertia version:', inertiaVersion);
+    } catch {}
+  }
+  if (!inertiaVersion) {
+    // Try to find version in inline script
+    const scriptMatch = html.match(/version["']\s*:\s*["']([^"']+)["']/);
+    if (scriptMatch) {
+      inertiaVersion = scriptMatch[1];
+      console.log('[auth] Got Inertia version from script:', inertiaVersion);
+    }
+  }
+
   console.log('[auth] Got CSRF token');
 
   // Step 2: Submit credentials
@@ -110,4 +130,8 @@ function isLoggedIn() {
   return loggedIn;
 }
 
-module.exports = { login, getCookieHeader, getXsrfHeader, isLoggedIn };
+function getInertiaVersion() {
+  return inertiaVersion;
+}
+
+module.exports = { login, getCookieHeader, getXsrfHeader, getInertiaVersion, isLoggedIn };

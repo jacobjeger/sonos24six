@@ -1,5 +1,5 @@
 const fetch = require('node-fetch');
-const { login, getCookieHeader, getXsrfHeader } = require('./auth');
+const { login, getCookieHeader, getXsrfHeader, getInertiaVersion } = require('./auth');
 
 const BASE = 'https://24six.app';
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -23,14 +23,16 @@ function clearCache() {
 }
 
 function defaultHeaders() {
-  return {
+  const headers = {
     'Cookie': getCookieHeader(),
     'X-XSRF-TOKEN': getXsrfHeader(),
     'X-Inertia': 'true',
-    'X-Inertia-Version': '',
     'X-Requested-With': 'XMLHttpRequest',
     'Accept': 'text/html, application/xhtml+xml',
   };
+  const ver = getInertiaVersion();
+  if (ver) headers['X-Inertia-Version'] = ver;
+  return headers;
 }
 
 async function apiRequest(method, url, body, useCache) {
@@ -58,22 +60,35 @@ async function apiRequest(method, url, body, useCache) {
     console.log(`[client] Got ${res.status}, re-logging in...`);
     clearCache();
     await login();
-    opts.headers = { ...opts.headers, ...defaultHeaders() };
+    opts.headers = defaultHeaders();
+    if (opts.body) opts.headers['Content-Type'] = 'application/json';
     res = await fetch(url, opts);
   }
 
+  // Inertia 409 = version mismatch, refetch with new version
+  if (res.status === 409) {
+    const location = res.headers.get('x-inertia-location');
+    console.log(`[client] Inertia 409, location: ${location}`);
+    if (location) {
+      opts.headers = defaultHeaders();
+      res = await fetch(location, { ...opts, method: 'GET' });
+    }
+  }
+
+  console.log(`[client] ${method} ${url} → status ${res.status}`);
   const text = await res.text();
   let data;
   try {
     data = JSON.parse(text);
   } catch {
-    // Some endpoints may redirect or return non-JSON
-    console.log(`[client] Non-JSON response from ${url}:`, text.substring(0, 200));
+    console.log(`[client] Non-JSON response (${text.length} chars):`, text.substring(0, 500));
     data = {};
   }
 
-  console.log(`[client] ${method} ${url} → status ${res.status}, keys:`, Object.keys(data));
-  if (data.props) console.log(`[client]   props keys:`, Object.keys(data.props));
+  if (Object.keys(data).length > 0) {
+    console.log(`[client]   response keys:`, Object.keys(data));
+    if (data.props) console.log(`[client]   props keys:`, Object.keys(data.props));
+  }
 
   if (cacheKey) setCache(cacheKey, data);
   return data;
