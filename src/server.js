@@ -35,9 +35,23 @@ app.get('/strings.xml', (req, res) => {
 </stringtables>`);
 });
 
+// Presentation map for Sonos (browse menu structure)
+app.get('/presentationmap.xml', (req, res) => {
+  res.set('Content-Type', 'text/xml; charset=utf-8');
+  res.send(`<?xml version="1.0" encoding="utf-8" ?>
+<Presentation>
+  <BrowseOptions>
+    <Option>
+      <id>root</id>
+      <name>24Six</name>
+    </Option>
+  </BrowseOptions>
+</Presentation>`);
+});
+
 // Health check
 app.get('/', (req, res) => {
-  res.send('24Six Sonos SMAPI Bridge is running');
+  res.json({ status: 'ok', service: '24Six Sonos SMAPI Bridge' });
 });
 
 // Start server

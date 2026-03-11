@@ -1,4 +1,9 @@
 {
   "build": { "builder": "NIXPACKS" },
-  "deploy": { "startCommand": "node src/server.js", "restartPolicyType": "ON_FAILURE" }
+  "deploy": {
+    "startCommand": "node src/server.js",
+    "restartPolicyType": "ON_FAILURE",
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 30
+  }
 }
