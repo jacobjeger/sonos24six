@@ -93,6 +93,9 @@ async function login() {
   });
   parseCookies(checkUser);
   console.log('[auth] Credentials submitted, status:', checkUser.status);
+  if (checkUser.status >= 400) {
+    throw new Error(`[auth] Credential check failed with status ${checkUser.status}`);
+  }
 
   // Step 3: Pin check
   const pinCheck = await fetch(`${BASE}/profiles/pin-check`, {
@@ -107,6 +110,9 @@ async function login() {
   });
   parseCookies(pinCheck);
   console.log('[auth] Pin check, status:', pinCheck.status);
+  if (pinCheck.status >= 400) {
+    throw new Error(`[auth] Pin check failed with status ${pinCheck.status}`);
+  }
 
   // Step 4: Profile login
   const profileLogin = await fetch(`${BASE}/profiles/login`, {
@@ -121,6 +127,9 @@ async function login() {
   });
   parseCookies(profileLogin);
   console.log('[auth] Profile login, status:', profileLogin.status);
+  if (profileLogin.status >= 400) {
+    throw new Error(`[auth] Profile login failed with status ${profileLogin.status}`);
+  }
 
   loggedIn = true;
   console.log(`[auth] Login complete, cookies: ${Object.keys(cookies).join(', ')}`);

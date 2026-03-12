@@ -40,6 +40,13 @@ async function dispatch(soapAction, body, reqHost) {
     return simpleResponse('reportAccountAction', '');
   }
 
+  // No-op stubs for playback reporting methods Sonos calls
+  const noOpMethods = ['reportStatus', 'setPlayedSeconds', 'reportPlaySeconds', 'reportPlayStatus'];
+  if (noOpMethods.includes(method)) {
+    const { simpleResponse } = require('./xml');
+    return simpleResponse(method, '');
+  }
+
   const handler = handlers[method];
   if (!handler) {
     console.log(`[soap] Unknown method: ${method}`);

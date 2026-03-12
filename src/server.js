@@ -5,6 +5,7 @@ const fetch = require('node-fetch');
 const { login } = require('./auth');
 const { dispatch } = require('./soap');
 const { getStreamUrl, prewarmCache } = require('./client');
+const { handleStreamProxy } = require('./proxy');
 
 const app = express();
 app.set('trust proxy', true);
@@ -86,8 +87,12 @@ app.get('/presentationmap.xml', (req, res) => {
 <Presentation>
   <BrowseOptions>
     <Option>
-      <id>root</id>
-      <name>24Six</name>
+      <id>my-library</id>
+      <name>My Library</name>
+    </Option>
+    <Option>
+      <id>browse</id>
+      <name>Browse</name>
     </Option>
   </BrowseOptions>
   <SearchCategories>
@@ -95,6 +100,10 @@ app.get('/presentationmap.xml', (req, res) => {
   </SearchCategories>
 </Presentation>`);
 });
+
+// AAC stream proxy — downloads HLS, extracts AAC, serves with Range support for Sonos
+app.get('/stream/:trackId', handleStreamProxy);
+app.head('/stream/:trackId', handleStreamProxy);
 
 // HLS manifest proxy — resolves master→media playlist so Sonos gets segment list
 app.get('/hls/:trackId/playlist.m3u8', async (req, res) => {
