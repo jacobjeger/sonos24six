@@ -41,7 +41,19 @@ function artistItem(r) {
   });
 }
 
+// Simple search cache — Sonos may re-query the same term quickly
+const searchCache = new Map();
+const CACHE_TTL = 60000; // 60 seconds
+
+function getCachedSearch(key) {
+  const entry = searchCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.xml;
+  searchCache.delete(key);
+  return null;
+}
+
 async function search({ id, term, index, count }) {
+  const t0 = Date.now();
   console.log(`[search] Called with id=${id} term=${term} index=${index} count=${count}`);
   if (!term) {
     return resultResponse('search', [], 0, 0);
@@ -54,52 +66,56 @@ async function search({ id, term, index, count }) {
   }
   console.log(`[search] Searching for "${term}" in category "${category}"`);
 
+  // Check cache first — instant response for repeated searches
+  const cacheKey = `${category}:${term}:${index}:${count}`;
+  const cached = getCachedSearch(cacheKey);
+  if (cached) {
+    console.log(`[search] Cache hit for "${term}" (${Date.now() - t0}ms)`);
+    return cached;
+  }
+
   let items = [];
 
-  // Try full search first (GET /app/music/search?q=) — returns categorized results
-  try {
-    const props = await searchFull(term);
-    const propKeys = Object.keys(props || {});
-    console.log(`[search] Full search props keys:`, propKeys);
+  function extractArr(val) {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    if (val.tiles) return val.tiles;
+    if (val.data) return val.data;
+    if (val.items) return val.items;
+    return [];
+  }
 
-    function extractArr(val) {
-      if (!val) return [];
-      if (Array.isArray(val)) return val;
-      if (val.tiles) return val.tiles;
-      if (val.data) return val.data;
-      if (val.items) return val.items;
-      return [];
-    }
+  // Run BOTH searches in parallel — total time = max(full, quick) instead of full + quick
+  const [fullResult, quickResult] = await Promise.allSettled([
+    searchFull(term),
+    searchQuick(term),
+  ]);
+
+  console.log(`[search] API calls done in ${Date.now() - t0}ms (full: ${fullResult.status}, quick: ${quickResult.status})`);
+
+  // Try full search results first (better categorization)
+  if (fullResult.status === 'fulfilled' && fullResult.value) {
+    const props = fullResult.value;
+    const propKeys = Object.keys(props || {});
 
     const songs = extractArr(props.songs || props.contents || props.content);
     const albums = extractArr(props.collections || props.albums);
     const artists = extractArr(props.artists);
     const playlists = extractArr(props.playlists);
 
-    console.log(`[search] Full search results: ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${playlists.length} playlists`);
+    console.log(`[search] Full: ${songs.length} songs, ${albums.length} albums, ${artists.length} artists, ${playlists.length} playlists`);
 
-    // If no categorized results, scan all props for arrays of items
     if (songs.length === 0 && albums.length === 0 && artists.length === 0 && playlists.length === 0) {
-      console.log(`[search] No categorized results, scanning all props...`);
       for (const key of propKeys) {
         if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
-        const val = props[key];
-        const arr = extractArr(val);
-        if (arr.length > 0) {
-          console.log(`[search] Found ${arr.length} items in props.${key}`);
-          for (const r of arr) {
-            if (!r || !r.id) continue;
-            const type = r.type || (r.contents !== undefined ? 'playlist' : (r.is_artist ? 'artist' : ''));
-            if (type === 'content' || r.length || r.length_in_seconds) {
-              items.push(trackItem(r));
-            } else if (type === 'artist' || r.is_artist) {
-              items.push(artistItem(r));
-            } else if (type === 'collection' || r.cover_url) {
-              items.push(albumItem(r));
-            } else {
-              items.push(trackItem(r));
-            }
-          }
+        const arr = extractArr(props[key]);
+        for (const r of arr) {
+          if (!r || !r.id) continue;
+          const type = r.type || (r.contents !== undefined ? 'playlist' : (r.is_artist ? 'artist' : ''));
+          if (type === 'content' || r.length || r.length_in_seconds) items.push(trackItem(r));
+          else if (type === 'artist' || r.is_artist) items.push(artistItem(r));
+          else if (type === 'collection' || r.cover_url) items.push(albumItem(r));
+          else items.push(trackItem(r));
         }
       }
     } else {
@@ -126,38 +142,34 @@ async function search({ id, term, index, count }) {
         }
       }
     }
-  } catch (err) {
-    console.log(`[search] Full search failed: ${err.message}, falling back to quick search`);
   }
 
   // Fallback to quick search if full search returned nothing
-  if (items.length === 0) {
-    try {
-      const results = await searchQuick(term);
-      console.log(`[search] Quick search: ${results.length} results`);
-      for (const r of results) {
-        if (!r || !r.id) continue;
-        if (r.type === 'content' && (category === 'all' || category === 'tracks')) {
-          items.push(trackItem(r));
-        } else if (r.type === 'collection' && (category === 'all' || category === 'albums')) {
-          items.push(albumItem(r));
-        } else if (r.type === 'artist' && (category === 'all' || category === 'artists')) {
-          items.push(artistItem(r));
-        } else if (category === 'all') {
-          items.push(trackItem(r));
-        }
-      }
-    } catch (err) {
-      console.error(`[search] Quick search also failed: ${err.message}`);
+  if (items.length === 0 && quickResult.status === 'fulfilled' && quickResult.value) {
+    const results = quickResult.value;
+    console.log(`[search] Using quick search fallback: ${results.length} results`);
+    for (const r of results) {
+      if (!r || !r.id) continue;
+      if (r.type === 'content' && (category === 'all' || category === 'tracks')) items.push(trackItem(r));
+      else if (r.type === 'collection' && (category === 'all' || category === 'albums')) items.push(albumItem(r));
+      else if (r.type === 'artist' && (category === 'all' || category === 'artists')) items.push(artistItem(r));
+      else if (category === 'all') items.push(trackItem(r));
     }
   }
 
   const sliced = items.slice(index, index + count);
-  console.log(`[search] Returning ${sliced.length} of ${items.length} items`);
+  const elapsed = Date.now() - t0;
+  console.log(`[search] Returning ${sliced.length} of ${items.length} items (${elapsed}ms)`);
   const xml = resultResponse('search', sliced, index, items.length);
-  // Log response snippet for debugging Sonos "No results" issue
-  console.log(`[search] Response XML length: ${xml.length}, first 600 chars:`);
-  console.log(xml.substring(0, 600));
+
+  // Cache the response for quick repeat lookups
+  searchCache.set(cacheKey, { xml, ts: Date.now() });
+
+  // Warn if slow — Sonos likely times out around 3-5s
+  if (elapsed > 3000) {
+    console.warn(`[search] SLOW RESPONSE: ${elapsed}ms — Sonos may have timed out!`);
+  }
+
   return xml;
 }
 
