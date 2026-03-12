@@ -47,10 +47,10 @@ async function search({ id, term, index, count }) {
     return resultResponse('search', [], 0, 0);
   }
 
-  // Normalize category — handle search:all, search_all, all, etc.
+  // Normalize category — handle any format: search:all, All, SEARCH:ALL, etc.
   let category = 'all';
   if (id) {
-    category = id.replace(/^search[_:]?/, '') || 'all';
+    category = id.replace(/^search[_:]?/i, '').toLowerCase() || 'all';
   }
   console.log(`[search] Searching for "${term}" in category "${category}"`);
 
