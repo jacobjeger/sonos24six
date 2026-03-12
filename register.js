@@ -45,7 +45,7 @@ async function register(sonosIp, bridgeUrl) {
         stringsVersion: '1',
         stringsUri: `${bridgeUrl}/strings.xml`,
         presentationMapVersion: '1',
-        presentationMapUri: '',
+        presentationMapUri: `${bridgeUrl}/presentationmap.xml`,
         containerType: 'MService',
         caps: 'search',
         ...(csrfToken ? { csrfToken } : {}),
