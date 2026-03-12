@@ -209,6 +209,29 @@ app.get('/logs', (req, res) => {
   });
 });
 
+// Debug: dump featured homepage data structure
+app.get('/debug/featured', async (req, res) => {
+  try {
+    const client = require('./client');
+    const featured = await client.getFeatured();
+    const summary = {};
+    for (const key of Object.keys(featured)) {
+      const val = featured[key];
+      if (val == null) { summary[key] = null; continue; }
+      if (Array.isArray(val)) {
+        summary[key] = { type: 'array', length: val.length, first: val[0] ? { keys: Object.keys(val[0]), id: val[0].id, title: val[0].title, name: val[0].name, headline: val[0].headline } : null };
+      } else if (typeof val === 'object') {
+        summary[key] = { type: 'object', keys: Object.keys(val), headline: val.headline, title: val.title, tilesCount: Array.isArray(val.tiles) ? val.tiles.length : undefined, dataCount: Array.isArray(val.data) ? val.data.length : undefined };
+      } else {
+        summary[key] = { type: typeof val, value: String(val).substring(0, 100) };
+      }
+    }
+    res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Self-test — simulate a SOAP getMetadata(root) call through the full pipeline
 app.get('/selftest', async (req, res) => {
   const soapBody = `<?xml version="1.0" encoding="utf-8"?>
