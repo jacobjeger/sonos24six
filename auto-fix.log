@@ -10,3 +10,4 @@
 [2026-03-12T01:55:15Z] ACTION: Fix intermittent search 'No results' — strip invalid XML control chars in escapeXml, add search response logging, add /debug/search endpoint, add SMAPI request counter | FILES: src/xml.js, src/handlers/search.js, src/server.js | RESULT: success
 [2026-03-12T02:00:44Z] ACTION: Fix missing presentationMapUri in service registration — Sonos couldn't find search categories because URI was empty | FILES: register.js | RESULT: success
 [2026-03-12T02:20:17Z] ACTION: Make search category normalization case-insensitive — handles any ID format from Sonos portal (All, search:all, SEARCH:ALL, etc.) | FILES: src/handlers/search.js | RESULT: success
+[2026-03-12T02:30:06Z] ACTION: Stabilize catalog version in getLastUpdate — stop invalidating Sonos caches on every deploy, increase poll interval to 300s | FILES: src/handlers/getLastUpdate.js | RESULT: success
