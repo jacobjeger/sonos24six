@@ -10,6 +10,15 @@ const app = express();
 app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 
+// Normalize double slashes in URL path (e.g. //smapi → /smapi)
+app.use((req, res, next) => {
+  if (req.path !== req.path.replace(/\/+/g, '/')) {
+    return res.redirect(req.path.replace(/\/+/g, '/'));
+  }
+  console.log(`[http] ${req.method} ${req.path}`);
+  next();
+});
+
 // Sonos SMAPI WSDL / GET endpoint — Sonos verifies reachability via GET
 app.get('/smapi', (req, res) => {
   res.set('Content-Type', 'text/xml; charset=utf-8');
@@ -175,6 +184,27 @@ app.get('/test/:method/:id?', async (req, res) => {
     res.send(xml);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Self-test — simulate a SOAP getMetadata(root) call through the full pipeline
+app.get('/selftest', async (req, res) => {
+  const soapBody = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
+  <s:Body>
+    <getMetadata xmlns="http://www.sonos.com/Services/1.1">
+      <id>root</id>
+      <index>0</index>
+      <count>100</count>
+    </getMetadata>
+  </s:Body>
+</s:Envelope>`;
+  try {
+    const xml = await dispatch('"http://www.sonos.com/Services/1.1#getMetadata"', soapBody, req.get('host'));
+    res.set('Content-Type', 'text/xml; charset=utf-8');
+    res.send(xml);
+  } catch (err) {
+    res.status(500).send(`Error: ${err.message}`);
   }
 });
 
