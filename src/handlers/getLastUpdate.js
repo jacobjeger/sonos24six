@@ -1,11 +1,13 @@
 const { simpleResponse } = require('../xml');
 
+// Bump this version whenever browse structure changes to invalidate Sonos cache
+const CATALOG_VERSION = '2';
+
 async function getLastUpdate() {
-  console.log(`[getLastUpdate] Returning static catalog version`);
   return simpleResponse('getLastUpdate',
     `      <getLastUpdateResult>
-        <catalog>1</catalog>
-        <favorites>1</favorites>
+        <catalog>${CATALOG_VERSION}</catalog>
+        <favorites>${CATALOG_VERSION}</favorites>
         <pollInterval>60</pollInterval>
       </getLastUpdateResult>`);
 }
