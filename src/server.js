@@ -10,7 +10,14 @@ const app = express();
 app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 
-// Normalize double slashes in URL path (e.g. //smapi → /smapi)
+// In-memory request log (last 200 entries) — accessible via /logs
+const requestLog = [];
+function addLog(entry) {
+  requestLog.push({ ts: new Date().toISOString(), ...entry });
+  if (requestLog.length > 200) requestLog.shift();
+}
+
+// Normalize double slashes and log every request
 app.use((req, res, next) => {
   if (req.path !== req.path.replace(/\/+/g, '/')) {
     return res.redirect(req.path.replace(/\/+/g, '/'));
@@ -39,6 +46,8 @@ app.get('/smapi', (req, res) => {
 // Parse raw XML body for SOAP requests
 app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
   const soapAction = req.headers['soapaction'] || req.headers['SOAPAction'] || '';
+  const method = (soapAction.match(/#(\w+)/) || [])[1] || 'unknown';
+  addLog({ method, soapAction, bodyLength: (req.body || '').length, ip: req.ip });
 
   try {
     const xml = await dispatch(soapAction, req.body, req.get('host'));
@@ -46,6 +55,7 @@ app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res)
     res.send(xml);
   } catch (err) {
     console.error(`[soap] error:`, err.message);
+    addLog({ method, error: err.message });
     const { soapFault } = require('./xml');
     res.status(500).set('Content-Type', 'text/xml; charset=utf-8');
     res.send(soapFault('Server.ServiceError', err.message || 'Internal error'));
@@ -185,6 +195,15 @@ app.get('/test/:method/:id?', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// View all SOAP requests received since startup
+app.get('/logs', (req, res) => {
+  res.json({
+    total: requestLog.length,
+    uptime: `${Math.floor(process.uptime())}s`,
+    requests: requestLog,
+  });
 });
 
 // Self-test — simulate a SOAP getMetadata(root) call through the full pipeline
