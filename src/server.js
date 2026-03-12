@@ -47,15 +47,18 @@ app.get('/smapi', (req, res) => {
 app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
   const soapAction = req.headers['soapaction'] || req.headers['SOAPAction'] || '';
   const method = (soapAction.match(/#(\w+)/) || [])[1] || 'unknown';
-  addLog({ method, soapAction, bodyLength: (req.body || '').length, ip: req.ip });
+  // Extract id from SOAP body for logging
+  const idMatch = (req.body || '').match(/<(?:[\w]+:)?id[^>]*>([^<]*)<\/(?:[\w]+:)?id>/);
+  const id = idMatch ? idMatch[1].trim() : null;
 
   try {
     const xml = await dispatch(soapAction, req.body, req.get('host'));
+    addLog({ method, id, responseLength: xml ? xml.length : 0 });
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(xml);
   } catch (err) {
     console.error(`[soap] error:`, err.message);
-    addLog({ method, error: err.message });
+    addLog({ method, id, error: err.message });
     const { soapFault } = require('./xml');
     res.status(500).set('Content-Type', 'text/xml; charset=utf-8');
     res.send(soapFault('Server.ServiceError', err.message || 'Internal error'));
