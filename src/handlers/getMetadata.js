@@ -13,9 +13,6 @@ const STATIC = {
     { id: 'artists', itemType: 'container', title: 'Artists' },
     { id: 'liked-songs', itemType: 'container', title: 'Liked Songs' },
   ],
-  browse: [
-    { id: 'new-releases', itemType: 'container', title: 'New Releases' },
-  ],
 };
 
 function extractArtist(track) {
@@ -51,6 +48,16 @@ function paginate(items, index, count) {
   return { sliced, total: items.length };
 }
 
+// Helper: extract albums/collections from a featured section value
+function extractAlbumsFromSection(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'object') {
+    return val.tiles || val.data || val.items || [];
+  }
+  return [];
+}
+
 async function getMetadata({ id, index, count }) {
   console.log(`[getMetadata] id=${id}`);
 
@@ -69,6 +76,106 @@ async function getMetadata({ id, index, count }) {
   if (id === 'search') {
     const items = [mediaCollection({ id: 'search:all', itemType: 'search', title: 'All' })];
     return resultResponse('getMetadata', items, 0, items.length);
+  }
+
+  // Browse — dynamically build categories from featured homepage sections
+  if (id === 'browse') {
+    try {
+      const featured = await client.getFeatured();
+      const categories = [];
+
+      for (const key of Object.keys(featured)) {
+        if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
+        const val = featured[key];
+        if (!val) continue;
+
+        // Determine section title and items
+        let sectionItems = [];
+        let headline = '';
+
+        if (Array.isArray(val) && val.length > 0 && val[0] && val[0].id) {
+          sectionItems = val;
+          // Use key as title, formatted nicely
+          headline = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        } else if (val && typeof val === 'object' && !Array.isArray(val)) {
+          headline = val.headline || val.title || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+          sectionItems = val.tiles || val.data || val.items || [];
+        }
+
+        if (Array.isArray(sectionItems) && sectionItems.length > 0) {
+          categories.push(mediaCollection({
+            id: `featured:${key}`,
+            itemType: 'container',
+            title: headline,
+            albumArtURI: (sectionItems[0] && (sectionItems[0].cover_url || sectionItems[0].img)) || '',
+            canPlay: false,
+            canEnumerate: true,
+          }));
+        }
+      }
+
+      // Fallback: if no featured sections found, show a single "New Releases" folder
+      if (categories.length === 0) {
+        categories.push(mediaCollection({
+          id: 'new-releases',
+          itemType: 'container',
+          title: 'New Releases',
+        }));
+      }
+
+      return resultResponse('getMetadata', categories, 0, categories.length);
+    } catch (err) {
+      console.error(`[getMetadata] browse error:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
+  }
+
+  // Featured section contents — shows albums/playlists from a specific featured homepage section
+  if (id && id.startsWith('featured:')) {
+    try {
+      const sectionKey = id.substring('featured:'.length);
+      const featured = await client.getFeatured();
+      const val = featured[sectionKey];
+      const sectionItems = extractAlbumsFromSection(val);
+      const items = [];
+      const seen = new Set();
+
+      for (const c of sectionItems) {
+        if (!c || !c.id || seen.has(c.id)) continue;
+        seen.add(c.id);
+
+        // Determine if it's a playlist, album, or artist based on available fields
+        const type = c.type || (c.contents !== undefined ? 'playlist' : 'album');
+        if (type === 'artist' || c.is_artist) {
+          client.cacheArtist(c);
+          items.push(mediaCollection({
+            id: `artist:${c.id}`,
+            itemType: 'artist',
+            title: c.name || c.title || '',
+            albumArtURI: c.img || c.cover_url || '',
+            canPlay: false,
+            canEnumerate: true,
+          }));
+        } else {
+          client.cacheAlbum(c);
+          items.push(mediaCollection({
+            id: `album:${c.id}`,
+            itemType: 'album',
+            title: c.title || c.name || '',
+            artist: c.subtitle || '',
+            albumArtURI: c.cover_url || c.img || '',
+            canPlay: true,
+            canEnumerate: true,
+          }));
+        }
+      }
+
+      const { sliced, total } = paginate(items, index, count);
+      return resultResponse('getMetadata', sliced, index, total);
+    } catch (err) {
+      console.error(`[getMetadata] featured section error:`, err.message);
+      return resultResponse('getMetadata', [], 0, 0);
+    }
   }
 
   // Dynamic containers — Library
@@ -151,37 +258,28 @@ async function getMetadata({ id, index, count }) {
     }
   }
 
+  // Legacy new-releases fallback (same as featured:* but fetches all sections)
   if (id === 'new-releases') {
     try {
       const featured = await client.getFeatured();
       const items = [];
       const seen = new Set();
 
-      function addAlbum(c) {
-        if (!c || !c.id || seen.has(c.id)) return;
-        seen.add(c.id);
-        items.push(mediaCollection({
-          id: `album:${c.id}`,
-          itemType: 'album',
-          title: c.title || c.name || '',
-          artist: c.subtitle || '',
-          albumArtURI: c.cover_url || c.img || '',
-          canPlay: true,
-          canEnumerate: true,
-        }));
-      }
-
       for (const key of Object.keys(featured)) {
         if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
-        const val = featured[key];
-        if (!val) continue;
-        if (Array.isArray(val)) {
-          for (const c of val) addAlbum(c);
-        } else if (val && typeof val === 'object') {
-          const tiles = val.tiles || val.data || val.items || [];
-          if (Array.isArray(tiles)) {
-            for (const c of tiles) addAlbum(c);
-          }
+        const sectionItems = extractAlbumsFromSection(featured[key]);
+        for (const c of sectionItems) {
+          if (!c || !c.id || seen.has(c.id)) continue;
+          seen.add(c.id);
+          items.push(mediaCollection({
+            id: `album:${c.id}`,
+            itemType: 'album',
+            title: c.title || c.name || '',
+            artist: c.subtitle || '',
+            albumArtURI: c.cover_url || c.img || '',
+            canPlay: true,
+            canEnumerate: true,
+          }));
         }
       }
 
@@ -200,9 +298,6 @@ async function getMetadata({ id, index, count }) {
       const data = await client.getPlaylistContents(playlistId);
       client.cachePlaylist(data);
       const tracks = data.contents || [];
-      if (tracks.length > 0) {
-        console.log(`[getMetadata] playlist track[0] id=${tracks[0].id} content_id=${tracks[0].content_id}`);
-      }
       const items = tracks.map(t => trackToMetadata(t));
       const { sliced, total } = paginate(items, index, count);
       return resultResponse('getMetadata', sliced, index, total);

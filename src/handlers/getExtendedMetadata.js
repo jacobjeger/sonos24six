@@ -180,6 +180,22 @@ async function getExtendedMetadata({ id }) {
       `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
   }
 
+  // Featured section containers (featured:key)
+  if (id.startsWith('featured:')) {
+    const sectionKey = id.substring('featured:'.length);
+    const title = sectionKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const xml = mediaCollection({
+      id,
+      itemType: 'container',
+      title,
+      albumArtURI: '',
+      canPlay: false,
+      canEnumerate: true,
+    });
+    return simpleResponse('getExtendedMetadata',
+      `      <getExtendedMetadataResult>\n${xml}\n      </getExtendedMetadataResult>`);
+  }
+
   // Fallback
   const xml = mediaCollection({
     id,

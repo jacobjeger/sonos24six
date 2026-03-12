@@ -30,15 +30,13 @@ app.get('/smapi', (req, res) => {
 // Parse raw XML body for SOAP requests
 app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
   const soapAction = req.headers['soapaction'] || req.headers['SOAPAction'] || '';
-  const method = (soapAction.match(/#(\w+)/) || [])[1] || 'unknown';
-  console.log(`[soap] ${method}`);
 
   try {
     const xml = await dispatch(soapAction, req.body, req.get('host'));
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(xml);
   } catch (err) {
-    console.error(`[soap] ${method} error:`, err.message);
+    console.error(`[soap] error:`, err.message);
     const { soapFault } = require('./xml');
     res.status(500).set('Content-Type', 'text/xml; charset=utf-8');
     res.send(soapFault('Server.ServiceError', err.message || 'Internal error'));
@@ -161,6 +159,23 @@ app.get('/hls/:trackId/playlist.m3u8', async (req, res) => {
 // Health check
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: '24Six Sonos SMAPI Bridge' });
+});
+
+// Diagnostic endpoint — test SMAPI handlers directly
+app.get('/test/:method/:id?', async (req, res) => {
+  const { method, id } = req.params;
+  const validMethods = ['getMetadata', 'getExtendedMetadata', 'getMediaMetadata'];
+  if (!validMethods.includes(method)) {
+    return res.json({ error: `Unknown method. Use: ${validMethods.join(', ')}` });
+  }
+  try {
+    const handler = require(`./handlers/${method}`);
+    const xml = await handler({ id: id || 'root', index: 0, count: 100 });
+    res.set('Content-Type', 'text/xml; charset=utf-8');
+    res.send(xml);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Start server
