@@ -10,8 +10,11 @@ const app = express();
 app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 
-// Log every incoming request
+// Normalize double slashes in URL path (e.g. //smapi → /smapi)
 app.use((req, res, next) => {
+  if (req.path !== req.path.replace(/\/+/g, '/')) {
+    return res.redirect(req.path.replace(/\/+/g, '/'));
+  }
   console.log(`[http] ${req.method} ${req.path}`);
   next();
 });
