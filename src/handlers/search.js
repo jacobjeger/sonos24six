@@ -154,7 +154,11 @@ async function search({ id, term, index, count }) {
 
   const sliced = items.slice(index, index + count);
   console.log(`[search] Returning ${sliced.length} of ${items.length} items`);
-  return resultResponse('search', sliced, index, items.length);
+  const xml = resultResponse('search', sliced, index, items.length);
+  // Log response snippet for debugging Sonos "No results" issue
+  console.log(`[search] Response XML length: ${xml.length}, first 600 chars:`);
+  console.log(xml.substring(0, 600));
+  return xml;
 }
 
 module.exports = search;

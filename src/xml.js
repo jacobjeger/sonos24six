@@ -3,6 +3,8 @@ const NS = 'http://www.sonos.com/Services/1.1';
 function escapeXml(str) {
   if (!str) return '';
   return String(str)
+    // Strip characters invalid in XML 1.0 (control chars except \t, \n, \r)
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

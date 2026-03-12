@@ -7,3 +7,4 @@
 [2026-03-12T01:08:33Z] ACTION: Flatten root hierarchy - put featured categories directly in root alongside My Library, remove Browse sub-container Sonos refuses to drill into | FILES: src/handlers/getMetadata.js | RESULT: success
 [2026-03-12T01:17:14Z] ACTION: Revert getMediaURI to HLS (fix 'not encoded correctly'), add New Releases/All Albums/All Artists to root | FILES: src/handlers/getMediaURI.js, src/handlers/getMetadata.js | RESULT: success
 [2026-03-12T01:37:51Z] ACTION: Fix search handler - normalize category id (search:all vs search_all), add fallback scanning of all props, add error handling for quick search | FILES: src/handlers/search.js | RESULT: success
+[2026-03-12T01:55:15Z] ACTION: Fix intermittent search 'No results' — strip invalid XML control chars in escapeXml, add search response logging, add /debug/search endpoint, add SMAPI request counter | FILES: src/xml.js, src/handlers/search.js, src/server.js | RESULT: success

@@ -13,6 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 // In-memory request log (last 200 entries) — accessible via /logs
 const requestLog = [];
+let smapiRequestCount = 0;
 function addLog(entry) {
   requestLog.push({ ts: new Date().toISOString(), ...entry });
   if (requestLog.length > 200) requestLog.shift();
@@ -46,15 +47,29 @@ app.get('/smapi', (req, res) => {
 
 // Parse raw XML body for SOAP requests
 app.post('/smapi', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
+  smapiRequestCount++;
+  const reqNum = smapiRequestCount;
   const soapAction = req.headers['soapaction'] || req.headers['SOAPAction'] || '';
   const method = (soapAction.match(/#(\w+)/) || [])[1] || 'unknown';
   // Extract id from SOAP body for logging
   const idMatch = (req.body || '').match(/<(?:[\w]+:)?id[^>]*>([^<]*)<\/(?:[\w]+:)?id>/);
   const id = idMatch ? idMatch[1].trim() : null;
 
+  // Log search term for debugging
+  if (method === 'search') {
+    const termMatch = (req.body || '').match(/<(?:[\w]+:)?term[^>]*>([^<]*)<\/(?:[\w]+:)?term>/);
+    const term = termMatch ? termMatch[1].trim() : '(none)';
+    console.log(`[smapi] #${reqNum} SEARCH request: term="${term}" id=${id}`);
+  }
+
   try {
+    const start = Date.now();
     const xml = await dispatch(soapAction, req.body, req.get('host'));
-    addLog({ method, id, responseLength: xml ? xml.length : 0 });
+    const elapsed = Date.now() - start;
+    addLog({ method, id, responseLength: xml ? xml.length : 0, elapsed });
+    if (method === 'search') {
+      console.log(`[smapi] #${reqNum} SEARCH response: ${xml ? xml.length : 0} bytes in ${elapsed}ms`);
+    }
     res.set('Content-Type', 'text/xml; charset=utf-8');
     res.send(xml);
   } catch (err) {
@@ -209,10 +224,24 @@ app.get('/test/:method/:id?', async (req, res) => {
   }
 });
 
+// Debug search — inspect the exact SOAP XML that Sonos receives
+app.get('/debug/search', async (req, res) => {
+  const term = req.query.q || 'test';
+  try {
+    const searchHandler = require('./handlers/search');
+    const xml = await searchHandler({ id: 'search:all', term, index: 0, count: 100 });
+    res.set('Content-Type', 'text/xml; charset=utf-8');
+    res.send(xml);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // View all SOAP requests received since startup
 app.get('/logs', (req, res) => {
   res.json({
     total: requestLog.length,
+    totalSmapi: smapiRequestCount,
     uptime: `${Math.floor(process.uptime())}s`,
     requests: requestLog,
   });
