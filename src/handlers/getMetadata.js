@@ -66,6 +66,9 @@ async function getMetadata({ id, index, count }) {
   if (id === 'root') {
     const items = [
       mediaCollection({ id: 'my-library', itemType: 'container', title: 'My Library' }),
+      mediaCollection({ id: 'new-releases', itemType: 'container', title: 'New Releases' }),
+      mediaCollection({ id: 'albums', itemType: 'container', title: 'All Albums' }),
+      mediaCollection({ id: 'artists', itemType: 'container', title: 'All Artists' }),
     ];
     // Add featured categories directly to root
     try {
