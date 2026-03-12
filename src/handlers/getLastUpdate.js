@@ -1,7 +1,7 @@
 const { simpleResponse } = require('../xml');
 
-// Bump this version whenever browse structure changes to invalidate Sonos cache
-const CATALOG_VERSION = '2';
+// Use startup timestamp so each deploy gets a fresh catalog version
+const CATALOG_VERSION = String(Math.floor(Date.now() / 1000));
 
 async function getLastUpdate() {
   return simpleResponse('getLastUpdate',
