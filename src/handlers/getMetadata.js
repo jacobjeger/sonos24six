@@ -26,6 +26,13 @@ function extractAlbum(track) {
   return '';
 }
 
+function extractAlbumArtist(album) {
+  if (!album) return '';
+  if (album.subtitle) return album.subtitle;
+  if (album.artists && album.artists.length > 0 && album.artists[0].name) return album.artists[0].name;
+  return '';
+}
+
 function trackToMetadata(track) {
   client.cacheTrack(track);
   const trackId = track.content_id || track.id;
@@ -201,7 +208,7 @@ async function getMetadata({ id, index, count }) {
             id: `album:${c.id}`,
             itemType: 'album',
             title: c.title || c.name || '',
-            artist: c.subtitle || '',
+            artist: extractAlbumArtist(c),
             albumArtURI: c.cover_url || c.img || '',
             canPlay: true,
             canEnumerate: true,
@@ -249,7 +256,7 @@ async function getMetadata({ id, index, count }) {
           id: `album:${a.id}`,
           itemType: 'album',
           title: a.title || a.name || '',
-          artist: a.subtitle || '',
+          artist: extractAlbumArtist(a),
           albumArtURI: a.cover_url || a.img || '',
           canPlay: true,
           canEnumerate: true,
@@ -314,7 +321,7 @@ async function getMetadata({ id, index, count }) {
             id: `album:${c.id}`,
             itemType: 'album',
             title: c.title || c.name || '',
-            artist: c.subtitle || '',
+            artist: extractAlbumArtist(c),
             albumArtURI: c.cover_url || c.img || '',
             canPlay: true,
             canEnumerate: true,
@@ -383,7 +390,7 @@ async function getMetadata({ id, index, count }) {
           id: `album:${a.id}`,
           itemType: 'album',
           title: a.title || a.name || '',
-          artist: a.subtitle || '',
+          artist: extractAlbumArtist(a),
           albumArtURI: a.cover_url || a.img || '',
           canPlay: true,
           canEnumerate: true,

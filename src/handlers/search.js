@@ -3,7 +3,7 @@ const { searchFull, searchQuick, cacheTrack } = require('../client');
 
 function trackItem(r) {
   const title = r.title || r.name || '';
-  const artist = r.subtitle || (r.artists && r.artists[0] && r.artists[0].name) || '';
+  const artist = (r.artists && r.artists[0] && r.artists[0].name) || r.subtitle || '';
   const img = r.img || r.content_image_url || '';
   const duration = r.length || r.length_in_seconds || 0;
   // Cache for getMediaMetadata

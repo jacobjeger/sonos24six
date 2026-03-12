@@ -12,3 +12,4 @@
 [2026-03-12T02:20:17Z] ACTION: Make search category normalization case-insensitive — handles any ID format from Sonos portal (All, search:all, SEARCH:ALL, etc.) | FILES: src/handlers/search.js | RESULT: success
 [2026-03-12T02:30:06Z] ACTION: Stabilize catalog version in getLastUpdate — stop invalidating Sonos caches on every deploy, increase poll interval to 300s | FILES: src/handlers/getLastUpdate.js | RESULT: success
 [2026-03-12T02:39:10Z] ACTION: Speed up search — parallel API calls + 60s result cache + timing logs | FILES: src/handlers/search.js | RESULT: success
+[2026-03-12T03:14:02Z] ACTION: Fix inconsistent artist metadata extraction across handlers | FILES: search.js, getMetadata.js, getExtendedMetadata.js | RESULT: success

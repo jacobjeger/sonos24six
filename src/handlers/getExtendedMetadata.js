@@ -111,7 +111,7 @@ async function getExtendedMetadata({ id }) {
       id,
       itemType: 'album',
       title: (album && (album.title || album.name)) || `Album ${albumId}`,
-      artist: (album && album.subtitle) || '',
+      artist: (album && (album.subtitle || (album.artists && album.artists.length > 0 && album.artists[0].name))) || '',
       albumArtURI: (album && (album.cover_url || album.img)) || '',
       canPlay: true,
       canEnumerate: true,
