@@ -53,7 +53,7 @@ function extractAlbumsFromSection(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val;
   if (typeof val === 'object') {
-    return val.tiles || val.data || val.items || [];
+    return val.data || val.tiles || val.items || [];
   }
   return [];
 }
@@ -95,11 +95,12 @@ async function getMetadata({ id, index, count }) {
 
         if (Array.isArray(val) && val.length > 0 && val[0] && val[0].id) {
           sectionItems = val;
-          // Use key as title, formatted nicely
           headline = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
         } else if (val && typeof val === 'object' && !Array.isArray(val)) {
-          headline = val.headline || val.title || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-          sectionItems = val.tiles || val.data || val.items || [];
+          // 24Six uses { category, data } structure
+          const cat = val.category;
+          headline = (typeof cat === 'string' ? cat : (cat && (cat.name || cat.title))) || val.headline || val.title || val.name || `Section ${key}`;
+          sectionItems = val.data || val.tiles || val.items || [];
         }
 
         if (Array.isArray(sectionItems) && sectionItems.length > 0) {
