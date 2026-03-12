@@ -183,7 +183,17 @@ async function getExtendedMetadata({ id }) {
   // Featured section containers (featured:key)
   if (id.startsWith('featured:')) {
     const sectionKey = id.substring('featured:'.length);
-    const title = sectionKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    // Try to get the real category name from the featured data
+    let title = `Section ${sectionKey}`;
+    try {
+      const { getFeatured } = require('../client');
+      const featured = await getFeatured();
+      const val = featured[sectionKey];
+      if (val && val.category) {
+        const cat = val.category;
+        title = (typeof cat === 'string' ? cat : (cat.name || cat.title)) || title;
+      }
+    } catch { /* use fallback title */ }
     const xml = mediaCollection({
       id,
       itemType: 'container',
