@@ -1,9 +1,9 @@
 const { mediaCollection, mediaMetadata, resultResponse } = require('../xml');
-const { searchFull, searchQuick, cacheTrack } = require('../client');
+const { searchFull, searchQuick, cacheTrack, cacheAlbum, cacheArtist } = require('../client');
 
 function trackItem(r) {
   const title = r.title || r.name || '';
-  const artist = (r.artists && r.artists[0] && r.artists[0].name) || r.subtitle || '';
+  const artist = (r.artists && r.artists[0] && r.artists[0].name) || r.subtitle || (r.collection && r.collection.artists && r.collection.artists[0] && r.collection.artists[0].name) || '';
   const img = r.img || r.content_image_url || '';
   const duration = r.length || r.length_in_seconds || 0;
   // Cache for getMediaMetadata
@@ -19,6 +19,7 @@ function trackItem(r) {
 }
 
 function albumItem(r) {
+  cacheAlbum(r);
   return mediaCollection({
     id: `album:${r.id}`,
     itemType: 'album',
@@ -31,6 +32,7 @@ function albumItem(r) {
 }
 
 function artistItem(r) {
+  cacheArtist(r);
   return mediaCollection({
     id: `artist:${r.id}`,
     itemType: 'artist',
@@ -39,6 +41,13 @@ function artistItem(r) {
     canPlay: false,
     canEnumerate: true,
   });
+}
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
 }
 
 // Simple search cache — Sonos may re-query the same term quickly
@@ -85,10 +94,10 @@ async function search({ id, term, index, count }) {
     return [];
   }
 
-  // Run BOTH searches in parallel — total time = max(full, quick) instead of full + quick
+  // Run BOTH searches in parallel with 4s timeout — Sonos times out at ~5s
   const [fullResult, quickResult] = await Promise.allSettled([
-    searchFull(term),
-    searchQuick(term),
+    withTimeout(searchFull(term), 4000),
+    withTimeout(searchQuick(term), 4000),
   ]);
 
   console.log(`[search] API calls done in ${Date.now() - t0}ms (full: ${fullResult.status}, quick: ${quickResult.status})`);

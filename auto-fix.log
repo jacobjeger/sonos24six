@@ -13,3 +13,4 @@
 [2026-03-12T02:30:06Z] ACTION: Stabilize catalog version in getLastUpdate — stop invalidating Sonos caches on every deploy, increase poll interval to 300s | FILES: src/handlers/getLastUpdate.js | RESULT: success
 [2026-03-12T02:39:10Z] ACTION: Speed up search — parallel API calls + 60s result cache + timing logs | FILES: src/handlers/search.js | RESULT: success
 [2026-03-12T03:14:02Z] ACTION: Fix inconsistent artist metadata extraction across handlers | FILES: search.js, getMetadata.js, getExtendedMetadata.js | RESULT: success
+[2026-03-12T04:55:08Z] ACTION: decode XML entities in SOAP extractTag, add collection.artists fallback in search/getExtendedMetadata, cache albums/artists from search results, add 4s API timeout protection | FILES: soap.js, handlers/search.js, handlers/getExtendedMetadata.js | RESULT: success

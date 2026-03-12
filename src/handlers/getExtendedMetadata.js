@@ -7,6 +7,7 @@ function extractArtist(track) {
   if (!track) return '';
   if (track.artists && track.artists.length > 0 && track.artists[0].name) return track.artists[0].name;
   if (track.subtitle) return track.subtitle;
+  if (track.collection && track.collection.artists && track.collection.artists.length > 0) return track.collection.artists[0].name || '';
   return '';
 }
 
