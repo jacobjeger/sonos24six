@@ -7,6 +7,7 @@ function extractArtist(track) {
   if (!track) return '';
   if (track.artists && track.artists.length > 0 && track.artists[0].name) return track.artists[0].name;
   if (track.subtitle) return track.subtitle;
+  if (track.collection && track.collection.artists && track.collection.artists.length > 0) return track.collection.artists[0].name || '';
   return '';
 }
 
@@ -111,7 +112,7 @@ async function getExtendedMetadata({ id }) {
       id,
       itemType: 'album',
       title: (album && (album.title || album.name)) || `Album ${albumId}`,
-      artist: (album && album.subtitle) || '',
+      artist: (album && (album.subtitle || (album.artists && album.artists.length > 0 && album.artists[0].name))) || '',
       albumArtURI: (album && (album.cover_url || album.img)) || '',
       canPlay: true,
       canEnumerate: true,

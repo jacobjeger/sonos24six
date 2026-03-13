@@ -3,10 +3,6 @@ const client = require('../client');
 
 // Static browse hierarchy nodes
 const STATIC = {
-  root: [
-    { id: 'my-library', itemType: 'container', title: 'My Library' },
-    { id: 'browse', itemType: 'container', title: 'Browse' },
-  ],
   'my-library': [
     { id: 'playlists', itemType: 'container', title: 'Playlists' },
     { id: 'albums', itemType: 'container', title: 'Albums' },
@@ -27,6 +23,13 @@ function extractAlbum(track) {
   if (!track) return '';
   if (track.collection) return track.collection.title || track.collection.name || '';
   if (track.album_title) return track.album_title;
+  return '';
+}
+
+function extractAlbumArtist(album) {
+  if (!album) return '';
+  if (album.subtitle) return album.subtitle;
+  if (album.artists && album.artists.length > 0 && album.artists[0].name) return album.artists[0].name;
   return '';
 }
 
@@ -66,7 +69,49 @@ async function getMetadata({ id, index, count }) {
     return resultResponse('getMetadata', [], 0, 0);
   }
 
-  // Static containers
+  // Root — My Library + featured browse categories (flat, no sub-containers Sonos can't drill into)
+  if (id === 'root') {
+    const items = [
+      mediaCollection({ id: 'my-library', itemType: 'container', title: 'My Library' }),
+      mediaCollection({ id: 'new-releases', itemType: 'container', title: 'New Releases' }),
+      mediaCollection({ id: 'albums', itemType: 'container', title: 'All Albums' }),
+      mediaCollection({ id: 'artists', itemType: 'container', title: 'All Artists' }),
+    ];
+    // Add featured categories directly to root
+    try {
+      const featured = await client.getFeatured();
+      for (const key of Object.keys(featured)) {
+        if (['errors', 'device_id', 'meta', 'auth', 'flash'].includes(key)) continue;
+        const val = featured[key];
+        if (!val) continue;
+        let sectionItems = [];
+        let headline = '';
+        if (Array.isArray(val) && val.length > 0 && val[0] && val[0].id) {
+          sectionItems = val;
+          headline = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        } else if (val && typeof val === 'object' && !Array.isArray(val)) {
+          const cat = val.category;
+          headline = (typeof cat === 'string' ? cat : (cat && (cat.name || cat.title))) || val.headline || val.title || val.name || `Section ${key}`;
+          sectionItems = val.data || val.tiles || val.items || [];
+        }
+        if (Array.isArray(sectionItems) && sectionItems.length > 0) {
+          items.push(mediaCollection({
+            id: `featured:${key}`,
+            itemType: 'container',
+            title: headline,
+            albumArtURI: (sectionItems[0] && (sectionItems[0].cover_url || sectionItems[0].img)) || '',
+            canPlay: false,
+            canEnumerate: true,
+          }));
+        }
+      }
+    } catch (err) {
+      console.error(`[getMetadata] root featured error:`, err.message);
+    }
+    return resultResponse('getMetadata', items, 0, items.length);
+  }
+
+  // Static containers (my-library)
   if (STATIC[id]) {
     const items = STATIC[id].map(item => mediaCollection(item));
     return resultResponse('getMetadata', items, 0, items.length);
@@ -163,7 +208,7 @@ async function getMetadata({ id, index, count }) {
             id: `album:${c.id}`,
             itemType: 'album',
             title: c.title || c.name || '',
-            artist: c.subtitle || '',
+            artist: extractAlbumArtist(c),
             albumArtURI: c.cover_url || c.img || '',
             canPlay: true,
             canEnumerate: true,
@@ -211,7 +256,7 @@ async function getMetadata({ id, index, count }) {
           id: `album:${a.id}`,
           itemType: 'album',
           title: a.title || a.name || '',
-          artist: a.subtitle || '',
+          artist: extractAlbumArtist(a),
           albumArtURI: a.cover_url || a.img || '',
           canPlay: true,
           canEnumerate: true,
@@ -276,7 +321,7 @@ async function getMetadata({ id, index, count }) {
             id: `album:${c.id}`,
             itemType: 'album',
             title: c.title || c.name || '',
-            artist: c.subtitle || '',
+            artist: extractAlbumArtist(c),
             albumArtURI: c.cover_url || c.img || '',
             canPlay: true,
             canEnumerate: true,
@@ -345,7 +390,7 @@ async function getMetadata({ id, index, count }) {
           id: `album:${a.id}`,
           itemType: 'album',
           title: a.title || a.name || '',
-          artist: a.subtitle || '',
+          artist: extractAlbumArtist(a),
           albumArtURI: a.cover_url || a.img || '',
           canPlay: true,
           canEnumerate: true,

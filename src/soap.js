@@ -15,10 +15,15 @@ const handlers = {
   search,
 };
 
+function decodeXmlEntities(str) {
+  return str.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+}
+
 function extractTag(xml, tag) {
   const regex = new RegExp(`<(?:[\\w]+:)?${tag}[^>]*>([^<]*)</(?:[\\w]+:)?${tag}>`);
   const match = xml.match(regex);
-  return match ? match[1].trim() : null;
+  return match ? decodeXmlEntities(match[1].trim()) : null;
 }
 
 async function dispatch(soapAction, body, reqHost) {
