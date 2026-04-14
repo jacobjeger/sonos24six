@@ -43,7 +43,37 @@ A Sonos SMAPI bridge that lets you stream [24Six](https://www.24six.com) music o
    npm start
    ```
 
-5. Register the service on your Sonos speaker:
+5. Register the service on Sonos using one of the methods below.
+
+### Option A: Sonos Developer Portal (Recommended)
+
+This is the recommended approach — it registers the service globally for your Sonos household and persists across reboots.
+
+1. Create a free account at [developer.sonos.com](https://developer.sonos.com)
+
+2. Go to **My Integrations** and create a new SMAPI integration
+
+3. Configure the **Endpoints** tab:
+   - **Secure SMAPI Endpoint**: `https://your-bridge.up.railway.app/smapi` (your deployed bridge URL with `/smapi`)
+   - **Authentication**: Select **Anonymous**
+   - **Presentation Map URI**: `https://your-bridge.up.railway.app/presentationmap.xml`
+   - **Strings Table URI**: `https://your-bridge.up.railway.app/strings.xml`
+
+4. Configure the **Search Capabilities** tab:
+   - **SMAPI Search**: Enabled
+   - **Catalog Type**: GLOBAL
+   - Add a search category:
+     - **Category ID**: `All`
+     - **Category Mapped ID**: `search:all`
+
+5. Under **Distribution**, keep it set to **Development** (this is fine for personal use)
+
+6. Click **Test** or go to your Sonos app → **Settings > Services & Voice > Add a Service** and select your service name
+
+### Option B: Local Registration Script
+
+For quick local testing without a developer account:
+
    ```bash
    node register.js <sonos-ip> <bridge-url>
 
@@ -54,7 +84,9 @@ A Sonos SMAPI bridge that lets you stream [24Six](https://www.24six.com) music o
    node register.js 10.0.0.48 https://your-bridge.up.railway.app
    ```
 
-6. Open the Sonos app, go to **Settings > Services & Voice > Add a Service**, and select **24Six**.
+   Then open the Sonos app, go to **Settings > Services & Voice > Add a Service**, and select **24Six**.
+
+   > **Note:** Local registration may not persist across Sonos reboots. The Developer Portal method is more reliable.
 
 ## Deploy to Railway
 
